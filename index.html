@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="description" content="AI-powered grid-based character placement tool for tabletop gaming">
+  <meta name="theme-color" content="#1a1a1a">
+  
+  <title>Grid Master - AI Character Placement</title>
+
+  <style>
+    /* Reset and base styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #1a1a1a 0%, #2d2d30 100%);
+      color: #ffffff;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+    }
+    
+    #app {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+      position: relative;
+    }
+    
+    /* Canvas container */
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #2a2a2a;
+      border-left: 2px solid #444;
+      min-height: 100vh; /* Ensure minimum height */
+    }
+    
+    #game-canvas {
+      display: block;
+      cursor: crosshair;
+      background: #1e1e1e;
+      width: 100%;
+      height: 100%;
+      min-height: 100vh; /* Ensure canvas gets height */
+    }
+    
+    /* Sidebar */
+    #sidebar {
+      width: 320px;
+      background: rgba(26, 26, 26, 0.95);
+      backdrop-filter: blur(10px);
+      border-right: 2px solid #444;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      transition: transform 0.3s ease;
+    }
+    
+    #sidebar.collapsed {
+      transform: translateX(-100%);
+    }
+    
+    /* Header */
+    .header {
+      padding: 1rem;
+      border-bottom: 1px solid #444;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .logo {
+      font-size: 1.5rem;
+      font-weight: bold;
+      background: linear-gradient(45deg, #4CAF50, #2196F3);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .toggle-sidebar {
+      background: transparent;
+      border: 1px solid #555;
+      color: #fff;
+      padding: 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: all 0.2s ease;
+    }
+    
+    .toggle-sidebar:hover {
+      background: #555;
+      transform: scale(1.05);
+    }
+    
+    /* Tool sections */
+    .tool-section {
+      padding: 1rem;
+      border-bottom: 1px solid #333;
+    }
+    
+    .tool-section h3 {
+      margin-bottom: 0.75rem;
+      color: #4CAF50;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    /* File upload area */
+    .upload-area {
+      border: 2px dashed #555;
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 1rem;
+    }
+    
+    .upload-area:hover,
+    .upload-area.dragover {
+      border-color: #4CAF50;
+      background: rgba(76, 175, 80, 0.1);
+    }
+    
+    .upload-area input[type="file"] {
+      display: none;
+    }
+    
+    .upload-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      opacity: 0.7;
+    }
+    
+    /* AI Generation */
+    .ai-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    
+    .prompt-input {
+      width: 100%;
+      padding: 0.75rem;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.9rem;
+      resize: vertical;
+      min-height: 80px;
+    }
+    
+    .prompt-input:focus {
+      outline: none;
+      border-color: #4CAF50;
+      box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+    
+    .size-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+    }
+    
+    .size-option {
+      padding: 0.5rem;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s ease;
+      font-size: 0.8rem;
+    }
+    
+    .size-option:hover,
+    .size-option.selected {
+      background: #4CAF50;
+      border-color: #4CAF50;
+    }
+    
+    .generate-btn {
+      background: linear-gradient(45deg, #4CAF50, #45a049);
+      border: none;
+      color: white;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .generate-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    }
+    
+    .generate-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    /* Character library */
+    .character-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+      gap: 0.5rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .character-thumb {
+      aspect-ratio: 1;
+      background: #333;
+      border: 2px solid #555;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #888;
+      font-size: 0.7rem;
+    }
+    
+    .character-thumb:hover {
+      border-color: #4CAF50;
+      transform: scale(1.05);
+    }
+    
+    .character-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+    
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    
+    .control-btn {
+      background: #333;
+      border: 1px solid #555;
+      color: #fff;
+      padding: 0.5rem 0.75rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s ease;
+    }
+    
+    .control-btn:hover {
+      background: #555;
+    }
+    
+    .control-btn.active {
+      background: #4CAF50;
+      border-color: #4CAF50;
+    }
+    
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+      #sidebar {
+        width: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        z-index: 1000;
+      }
+      
+      #canvas-container {
+        width: 100%;
+      }
+      
+      .size-selector {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      #game-canvas {
+        cursor: pointer;
+      }
+    }
+    
+    /* Loading and status indicators */
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #333;
+      border-radius: 50%;
+      border-top-color: #4CAF50;
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .status-indicator {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.5rem 1rem;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 20px;
+      font-size: 0.8rem;
+      z-index: 200;
+    }
+    
+    .status-indicator.success {
+      background: rgba(76, 175, 80, 0.8);
+    }
+    
+    .status-indicator.error {
+      background: rgba(244, 67, 54, 0.8);
+    }
+    
+    /* Accessibility */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    
+    /* Focus styles for keyboard navigation */
+    button:focus,
+    input:focus,
+    textarea:focus {
+      outline: 2px solid #4CAF50;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar" role="complementary">
+      <header class="header">
+        <div class="logo">Grid Master</div>
+        <button class="toggle-sidebar" id="toggle-sidebar" aria-label="Toggle sidebar">
+          ☰
+        </button>
+      </header>
+      
+      <!-- Upload Section -->
+      <section class="tool-section">
+        <h3>Upload Images</h3>
+        <div class="upload-area" id="upload-area">
+          <input type="file" id="file-input" accept="image/*" multiple aria-label="Upload character images">
+          <div class="upload-icon">📁</div>
+          <div>Drop images here or click to browse</div>
+          <small>PNG, JPG up to 10MB each</small>
+        </div>
+      </section>
+      
+      <!-- AI Generation Section -->
+      <section class="tool-section">
+        <h3>AI Generate</h3>
+        <div class="ai-section">
+          <textarea 
+            class="prompt-input" 
+            id="ai-prompt" 
+            placeholder="Describe your character: 'A fierce orc warrior with a battle axe'"
+            aria-label="AI character description"
+          ></textarea>
+          
+          <div>
+            <label class="sr-only">Character size</label>
+            <div class="size-selector">
+              <button class="size-option selected" data-size="1x1">1×1</button>
+              <button class="size-option" data-size="2x2">2×2</button>
+              <button class="size-option" data-size="3x3">3×3</button>
+              <button class="size-option" data-size="1x2">1×2</button>
+              <button class="size-option" data-size="2x1">2×1</button>
+              <button class="size-option" data-size="4x4">4×4</button>
+            </div>
+          </div>
+          
+          <button class="generate-btn" id="generate-btn">
+            <span class="btn-text">Generate Character</span>
+          </button>
+        </div>
+      </section>
+      
+      <!-- Character Library -->
+      <section class="tool-section">
+        <h3>Character Library</h3>
+        <div class="character-grid" id="character-library">
+          <div class="character-thumb">Empty</div>
+          <div class="character-thumb">Empty</div>
+          <div class="character-thumb">Empty</div>
+          <div class="character-thumb">Empty</div>
+        </div>
+      </section>
+      
+      <!-- Tools -->
+      <section class="tool-section">
+        <h3>Tools</h3>
+        <div class="controls">
+          <button class="control-btn active" data-tool="place">Place</button>
+          <button class="control-btn" data-tool="select">Select</button>
+          <button class="control-btn" data-tool="delete">Delete</button>
+          <button class="control-btn" data-tool="move">Move</button>
+        </div>
+      </section>
+      
+      <!-- Grid Controls -->
+      <section class="tool-section">
+        <h3>Grid</h3>
+        <div class="controls">
+          <button class="control-btn" id="zoom-in">Zoom In</button>
+          <button class="control-btn" id="zoom-out">Zoom Out</button>
+          <button class="control-btn" id="reset-view">Reset</button>
+          <button class="control-btn" id="clear-all">Clear</button>
+        </div>
+      </section>
+    </aside>
+    
+    <!-- Main Canvas Area -->
+    <main id="canvas-container" role="main">
+      <div id="game-canvas" role="img" aria-label="Character placement grid"></div>
+      
+      <!-- Status indicator -->
+      <div id="status-indicator" class="status-indicator" style="display: none;"></div>
+    </main>
+  </div>
+  
+  <!-- Load the main application -->
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
