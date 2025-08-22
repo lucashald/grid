@@ -2,12 +2,6 @@
 // Export all tools for easy importing
 export { PlaceTool, DEFAULT_TEMPLATES } from './PlaceTool';
 export type { PlaceToolCallbacks, PlacementProperties, PlacementValidation } from './PlaceTool';
-
-// ===================================================================
-// Updated src/ui/EventManager.ts (additions/modifications)
-// ===================================================================
-
-// Add these imports at the top of EventManager.ts:
 import { PlaceTool } from '../tools/PlaceTool';
 import { GridObjectInstance } from '../types';
 

@@ -1,5 +1,5 @@
 // src/ui/EventManager.ts
-// Enhanced with PlaceTool integration
+// Complete event management system integrated with new GridRenderer
 
 import Konva from 'konva';
 import { GridRenderer } from '../grid/GridRenderer';
@@ -22,7 +22,6 @@ export interface EventManagerCallbacks {
   onObjectMoved: (objectId: string, oldPosition: GridPosition, newPosition: GridPosition) => boolean;
   onDragStart: (objectId: string, position: GridPosition) => void;
   onDragEnd: (objectId: string, position: GridPosition, success: boolean) => void;
-  // New PlaceTool callbacks
   onObjectPlaced: (instance: GridObjectInstance) => void;
   onPlacementFailed: (reason: string, position: GridPosition) => void;
   onTemplateSelected: (templateId: string) => void;
@@ -40,6 +39,7 @@ export class EventManager {
   private dragTarget: Konva.Node | null = null;
   private dragStartPosition: GridPosition | null = null;
   private dragObjectId: string | null = null;
+  private lastMousePosition: GridPosition | null = null;
 
   constructor(
     stage: Konva.Stage,
@@ -54,7 +54,7 @@ export class EventManager {
     this.appState = appState;
     this.callbacks = callbacks;
 
-    // Initialize PlaceTool
+    // Initialize PlaceTool with GridRenderer integration
     this.placeTool = new PlaceTool(
       gridState,
       gridRenderer,
@@ -66,7 +66,8 @@ export class EventManager {
     );
 
     this.setupEventHandlers();
-    console.log('✅ EventManager initialized with PlaceTool');
+    this.setupGridStatusDisplay();
+    console.log('✅ EventManager initialized with GridRenderer integration');
   }
 
   private setupEventHandlers(): void {
@@ -74,12 +75,58 @@ export class EventManager {
     this.stage.on('click tap', (e) => this.handleStageClick(e));
     this.stage.on('contextmenu', (e) => this.handleStageRightClick(e));
     
-    // Mouse events for hover feedback
+    // Mouse events for hover feedback and coordinate display
     this.stage.on('mousemove', (e) => this.handleMouseMove(e));
     this.stage.on('mouseenter', () => this.handleMouseEnter());
     this.stage.on('mouseleave', () => this.handleMouseLeave());
 
-    console.log('✅ Event handlers registered');
+    // Touch events for mobile support
+    this.stage.on('touchstart', (e) => this.handleTouchStart(e));
+    this.stage.on('touchend', (e) => this.handleTouchEnd(e));
+
+    // Keyboard events
+    this.setupKeyboardHandlers();
+
+    console.log('✅ Event handlers registered with responsive grid support');
+  }
+
+  private setupGridStatusDisplay(): void {
+    // Show grid status indicator if it exists
+    const gridStatus = document.getElementById('grid-status');
+    if (gridStatus) {
+      gridStatus.style.display = 'block';
+      this.updateGridInfoDisplay();
+    }
+  }
+
+  private setupKeyboardHandlers(): void {
+    document.addEventListener('keydown', (e) => {
+      // Don't trigger shortcuts when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Grid-specific shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 'g':
+            e.preventDefault();
+            this.toggleGridStatusDisplay();
+            break;
+          case 'r':
+            e.preventDefault();
+            this.forceGridResize();
+            break;
+        }
+      }
+
+      // Tool shortcuts
+      switch (e.key.toLowerCase()) {
+        case 'escape':
+          this.callbacks.onObjectDeselected();
+          break;
+      }
+    });
   }
 
   private handleStageClick(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
@@ -90,7 +137,9 @@ export class EventManager {
     
     // Check if we clicked on an object
     const target = e.target;
-    const isBackground = target === this.stage || target.getLayer() === this.gridRenderer.getBackgroundLayer() || target.getLayer() === this.gridRenderer.getGridLayer();
+    const isBackground = target === this.stage || 
+                        target.getLayer() === this.gridRenderer.getBackgroundLayer() || 
+                        target.getLayer() === this.gridRenderer.getGridLayer();
     
     if (isBackground) {
       // Clicked on empty space
@@ -99,6 +148,9 @@ export class EventManager {
       // Clicked on an object
       this.handleObjectClick(target, gridPos);
     }
+
+    // Update last mouse position
+    this.lastMousePosition = gridPos;
   }
 
   private handleEmptySpaceClick(gridPos: GridPosition): void {
@@ -107,7 +159,12 @@ export class EventManager {
     switch (this.appState.currentTool) {
       case ToolMode.PLACE:
         // Use PlaceTool for placement
-        this.placeTool.attemptPlacement(gridPos);
+        const success = this.placeTool.attemptPlacement(gridPos);
+        if (success) {
+          console.log(`✅ Object placed at (${gridPos.x}, ${gridPos.y})`);
+        } else {
+          console.log(`❌ Placement failed at (${gridPos.x}, ${gridPos.y})`);
+        }
         break;
         
       case ToolMode.SELECT:
@@ -116,11 +173,12 @@ export class EventManager {
         break;
         
       case ToolMode.DELETE:
-        console.log('Nothing to delete at empty space');
+        console.log('Delete tool: nothing to delete at empty space');
         break;
         
       case ToolMode.MOVE:
-        console.log('Move tool: click empty space');
+        console.log('Move tool: clicked empty space');
+        this.callbacks.onObjectDeselected();
         break;
     }
   }
@@ -139,6 +197,8 @@ export class EventManager {
     switch (this.appState.currentTool) {
       case ToolMode.PLACE:
         console.log('Place tool: clicked existing object - no action');
+        // Could show object info or suggest switching to select tool
+        this.showObjectInfo(objectId, gridPos);
         break;
         
       case ToolMode.SELECT:
@@ -151,7 +211,7 @@ export class EventManager {
         break;
         
       case ToolMode.MOVE:
-        console.log(`Move tool: selected ${objectId}`);
+        console.log(`Move tool: selected ${objectId} for moving`);
         this.callbacks.onObjectSelected(objectId);
         break;
     }
@@ -191,6 +251,9 @@ export class EventManager {
         if (selectedTemplate) {
           const validation = this.placeTool.validatePlacement(gridPos);
           console.log('Placement validation:', validation);
+          this.showPlacementInfo(gridPos, validation);
+        } else {
+          console.log('No template selected for placement');
         }
       }
     } else {
@@ -200,25 +263,8 @@ export class EventManager {
       });
     }
 
-    // Could show context menu here in the future
+    // Show context info
     this.showContextInfo(gridPos, objects);
-  }
-
-  private showContextInfo(position: GridPosition, objects: any[]): void {
-    // Create a temporary info display
-    const infoText = objects.length === 0 
-      ? `Empty tile (${position.x}, ${position.y})`
-      : `${objects.length} object(s) at (${position.x}, ${position.y})`;
-    
-    // Dispatch custom event for UI to handle
-    const event: GridEvent = {
-      type: 'contextInfo',
-      data: { position, objects, message: infoText },
-      timestamp: new Date()
-    };
-    
-    // Could emit to a proper event system here
-    console.log('Context info:', event);
   }
 
   private handleMouseMove(e: Konva.KonvaEventObject<MouseEvent>): void {
@@ -230,8 +276,47 @@ export class EventManager {
     // Update cursor based on tool and hover target
     this.updateCursor(e.target, gridPos);
     
-    // Show grid coordinates (could be displayed in UI)
+    // Show grid coordinates and info
     this.updateGridCoordinateDisplay(gridPos);
+    
+    // Update last mouse position
+    this.lastMousePosition = gridPos;
+  }
+
+  private handleMouseEnter(): void {
+    // Mouse entered canvas
+    this.updateCursor(this.stage, { x: 0, y: 0 });
+    
+    // Show grid status if hidden
+    const gridStatus = document.getElementById('grid-status');
+    if (gridStatus && gridStatus.style.display === 'none') {
+      gridStatus.style.display = 'block';
+    }
+  }
+
+  private handleMouseLeave(): void {
+    // Mouse left canvas
+    const container = this.stage.container();
+    container.style.cursor = 'default';
+    document.title = 'Grid Master';
+    this.lastMousePosition = null;
+  }
+
+  private handleTouchStart(e: Konva.KonvaEventObject<TouchEvent>): void {
+    // Handle touch as click for mobile
+    const pos = this.stage.getPointerPosition();
+    if (!pos) return;
+
+    const gridPos = this.gridRenderer.pixelToGrid(pos);
+    console.log(`Touch start at grid (${gridPos.x}, ${gridPos.y})`);
+    
+    // Update coordinate display for touch
+    this.updateGridCoordinateDisplay(gridPos);
+  }
+
+  private handleTouchEnd(e: Konva.KonvaEventObject<TouchEvent>): void {
+    // Handle touch end
+    console.log('Touch ended');
   }
 
   private updateCursor(target: Konva.Node, gridPos: GridPosition): void {
@@ -257,7 +342,11 @@ export class EventManager {
         break;
         
       case ToolMode.MOVE:
-        container.style.cursor = isBackground ? 'default' : 'grab';
+        if (this.isDragging) {
+          container.style.cursor = 'grabbing';
+        } else {
+          container.style.cursor = isBackground ? 'default' : 'grab';
+        }
         break;
         
       default:
@@ -266,32 +355,99 @@ export class EventManager {
   }
 
   private updateGridCoordinateDisplay(gridPos: GridPosition): void {
-    // Emit event for coordinate display update
+    // Update grid info display
+    const gridInfoEl = document.getElementById('grid-info-text');
+    if (gridInfoEl && this.gridRenderer.isValidGridPosition(gridPos)) {
+      const dimensions = this.gridRenderer.getDimensions();
+      const preset = this.gridRenderer.getCurrentPreset();
+      gridInfoEl.textContent = `(${gridPos.x},${gridPos.y}) | ${dimensions.width}×${dimensions.height} @ ${dimensions.tileSize}px | Preset: ${preset.maxWidth > 9999 ? 'XL' : preset.maxWidth + 'px'}`;
+    }
+    
+    // Update window title
+    if (this.gridRenderer.isValidGridPosition(gridPos)) {
+      document.title = `Grid Master - (${gridPos.x}, ${gridPos.y})`;
+    }
+    
+    // Emit coordinate update event
     const event: GridEvent = {
       type: 'coordinateUpdate',
       data: { position: gridPos },
       timestamp: new Date()
     };
-    
-    // For now, just update window title or console
-    if (this.gridRenderer.isValidGridPosition(gridPos)) {
-      document.title = `Grid Master - (${gridPos.x}, ${gridPos.y})`;
+  }
+
+  private updateGridInfoDisplay(): void {
+    const gridInfoEl = document.getElementById('grid-info-text');
+    if (gridInfoEl) {
+      const dimensions = this.gridRenderer.getDimensions();
+      const preset = this.gridRenderer.getCurrentPreset();
+      gridInfoEl.textContent = `Grid: ${dimensions.width}×${dimensions.height} @ ${dimensions.tileSize}px | Preset: ${preset.maxWidth > 9999 ? 'XL' : preset.maxWidth + 'px'}`;
     }
   }
 
-  private handleMouseEnter(): void {
-    // Mouse entered canvas
-    this.updateCursor(this.stage, { x: 0, y: 0 });
+  private showContextInfo(position: GridPosition, objects: any[]): void {
+    // Create a temporary info display
+    const infoText = objects.length === 0 
+      ? `Empty tile (${position.x}, ${position.y})`
+      : `${objects.length} object(s) at (${position.x}, ${position.y})`;
+    
+    // Dispatch custom event for UI to handle
+    const event: GridEvent = {
+      type: 'contextInfo',
+      data: { position, objects, message: infoText },
+      timestamp: new Date()
+    };
+    
+    console.log('Context info:', event);
   }
 
-  private handleMouseLeave(): void {
-    // Mouse left canvas
-    const container = this.stage.container();
-    container.style.cursor = 'default';
-    document.title = 'Grid Master';
+  private showObjectInfo(objectId: string, position: GridPosition): void {
+    console.log(`📋 Object Info: ${objectId} at (${position.x}, ${position.y})`);
+    
+    // Get object details from grid state
+    const objectPos = this.gridState.getObjectPosition(objectId);
+    const objectSize = this.gridState.getObjectSize(objectId);
+    
+    if (objectPos && objectSize) {
+      console.log(`   Position: (${objectPos.x}, ${objectPos.y})`);
+      console.log(`   Size: ${objectSize.width}×${objectSize.height}`);
+      
+      // Get all occupied positions
+      const occupiedPositions = this.gridRenderer.getOccupiedPositionsForObject(objectPos, objectSize);
+      console.log(`   Occupies ${occupiedPositions.length} tiles:`, occupiedPositions);
+    }
   }
 
-  // Drag handling methods (existing code)
+  private showPlacementInfo(position: GridPosition, validation: any): void {
+    console.log(`📋 Placement Info for (${position.x}, ${position.y}):`);
+    console.log(`   Can place: ${validation.canPlace}`);
+    if (!validation.canPlace && validation.reason) {
+      console.log(`   Reason: ${validation.reason}`);
+    }
+    if (validation.suggestedPosition) {
+      console.log(`   Suggested: (${validation.suggestedPosition.x}, ${validation.suggestedPosition.y})`);
+    }
+    if (validation.warnings && validation.warnings.length > 0) {
+      console.log(`   Warnings:`, validation.warnings);
+    }
+  }
+
+  private toggleGridStatusDisplay(): void {
+    const gridStatus = document.getElementById('grid-status');
+    if (gridStatus) {
+      const isVisible = gridStatus.style.display !== 'none';
+      gridStatus.style.display = isVisible ? 'none' : 'block';
+      console.log(`Grid status display ${isVisible ? 'hidden' : 'shown'}`);
+    }
+  }
+
+  private forceGridResize(): void {
+    console.log('🔄 Forcing grid resize...');
+    this.gridRenderer.updateForCurrentViewport();
+    this.updateGridInfoDisplay();
+  }
+
+  // Drag handling methods for object movement
   public setupObjectDragHandlers(konvaObject: Konva.Group, objectId: string): void {
     konvaObject.attrs.objectId = objectId; // Store object ID for identification
     
@@ -354,6 +510,9 @@ export class EventManager {
     
     // Visual feedback
     this.updateDragFeedback(konvaObject, canMove);
+    
+    // Update coordinate display during drag
+    this.updateGridCoordinateDisplay(newGridPos);
   }
 
   private updateDragFeedback(konvaObject: Konva.Group, isValid: boolean): void {
@@ -376,13 +535,13 @@ export class EventManager {
     const success = this.callbacks.onObjectMoved(objectId, this.dragStartPosition, newGridPos);
     
     if (success) {
-      // Snap to grid
+      // Snap to grid using GridRenderer
       const snappedPixelPos = this.gridRenderer.gridToPixel(newGridPos);
       konvaObject.x(snappedPixelPos.x);
       konvaObject.y(snappedPixelPos.y);
       console.log(`Drag success: ${objectId} moved to (${newGridPos.x}, ${newGridPos.y})`);
     } else {
-      // Revert to original position
+      // Revert to original position using GridRenderer
       const originalPixelPos = this.gridRenderer.gridToPixel(this.dragStartPosition);
       konvaObject.x(originalPixelPos.x);
       konvaObject.y(originalPixelPos.y);
@@ -410,9 +569,9 @@ export class EventManager {
     const shapes = konvaObject.find('Rect');
     if (shapes.length > 0) {
       const rect = shapes[0] as Konva.Rect;
-      // Reset to original color (this should come from object data)
       rect.strokeWidth(2);
-      // Would need to store original color somewhere
+      // Reset to default stroke color (could be stored in object data)
+      rect.stroke('#333333');
     }
   }
 
@@ -422,6 +581,11 @@ export class EventManager {
     
     // Update object draggability based on tool
     this.updateObjectInteractivity();
+    
+    // Update cursor for current mouse position
+    if (this.lastMousePosition) {
+      this.updateCursor(this.stage, this.lastMousePosition);
+    }
     
     console.log(`EventManager: Tool changed to ${tool}`);
   }
@@ -444,14 +608,21 @@ export class EventManager {
   }
 
   public selectTemplate(templateId: string): boolean {
-    return this.placeTool.selectTemplate(templateId);
+    const success = this.placeTool.selectTemplate(templateId);
+    if (success) {
+      // Update cursor for current mouse position
+      if (this.lastMousePosition) {
+        this.updateCursor(this.stage, this.lastMousePosition);
+      }
+    }
+    return success;
   }
 
   public getSelectedTemplate() {
     return this.placeTool.getSelectedTemplate();
   }
 
-  // Public methods
+  // Public utility methods
   public getCurrentGridPosition(): GridPosition | null {
     const pos = this.stage.getPointerPosition();
     return pos ? this.gridRenderer.pixelToGrid(pos) : null;
@@ -459,6 +630,19 @@ export class EventManager {
 
   public isValidPlacement(position: GridPosition, width: number, height: number): boolean {
     return this.gridState.canPlaceObject(position, { width, height }, ZLayer.CHARACTERS);
+  }
+
+  public getGridInfo(): any {
+    return this.gridRenderer.getGridInfo();
+  }
+
+  public debugEventState(): void {
+    console.log('🔍 EventManager Debug Info:');
+    console.log(`   Current tool: ${this.appState.currentTool}`);
+    console.log(`   Is dragging: ${this.isDragging}`);
+    console.log(`   Last mouse position:`, this.lastMousePosition);
+    console.log(`   Selected template:`, this.placeTool.getSelectedTemplate()?.name || 'None');
+    console.log(`   Grid info:`, this.gridRenderer.getGridInfo());
   }
 
   // Cleanup
@@ -469,6 +653,11 @@ export class EventManager {
     this.stage.off('mousemove');
     this.stage.off('mouseenter');
     this.stage.off('mouseleave');
+    this.stage.off('touchstart');
+    this.stage.off('touchend');
+    
+    // Remove keyboard listeners
+    document.removeEventListener('keydown', this.setupKeyboardHandlers);
     
     // Destroy PlaceTool
     this.placeTool?.destroy();

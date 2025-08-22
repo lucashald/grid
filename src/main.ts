@@ -1,5 +1,5 @@
 // src/main.ts
-// Grid Master Application with Single Object Management System
+// Updated with Grid Master Application with Single Object Management System
 
 import { GridMaster } from './GridMaster';
 import { EventManager, EventManagerCallbacks } from './ui/EventManager';
@@ -25,21 +25,25 @@ class EnhancedGridMasterApp {
 
   private initialize(): void {
     try {
-      // Initialize GridMaster
+      // Initialize GridMaster with minimal config - GridRenderer will calculate responsive sizing
       this.gridMaster = new GridMaster('game-canvas', {
-        tileSize: 48,
-        width: Math.floor(800 / 48),
-        height: Math.floor(600 / 48),
+        // Only specify preferences, not sizes - GridRenderer calculates optimal values
         showGrid: true,
         gridColor: '#404040',
         backgroundColor: '#1e1e1e'
+        // Remove: tileSize, width, height - GridRenderer calculates these responsively
       });
 
       // Initialize UI components
       this.setupEventManager();
       this.setupSidebar();
 
-      console.log('✅ Enhanced GridMaster application ready');
+      console.log('✅ Enhanced GridMaster application ready with responsive grid');
+      
+      // Log the calculated responsive configuration
+      const gridInfo = (this.gridMaster as any).gridRenderer.getGridInfo();
+      console.log('📱 Responsive Grid Info:', gridInfo);
+      
     } catch (error) {
       console.error('❌ Failed to initialize GridMaster:', error);
     }
@@ -95,7 +99,7 @@ class EnhancedGridMasterApp {
 
     this.eventManager = new EventManager(
       this.gridMaster.getStage(),
-      (this.gridMaster as any).gridRenderer, // Access via type assertion
+      (this.gridMaster as any).gridRenderer, // GridRenderer now has all the math
       (this.gridMaster as any).gridState,
       this.gridMaster.getAppState(),
       callbacks
@@ -403,8 +407,15 @@ class EnhancedGridMasterApp {
 
   public showGridStats(): void {
     const stats = this.gridMaster.getGridStats();
+    const gridInfo = (this.gridMaster as any).gridRenderer.getGridInfo();
+    
     console.log('📊 Grid Statistics:', stats);
-    this.showStatus(`${stats.totalObjects} objects, ${stats.occupiedTiles} tiles`, 'info');
+    console.log('📱 Responsive Info:', gridInfo);
+    
+    this.showStatus(
+      `${stats.totalObjects} objects, ${stats.occupiedTiles} tiles, ${gridInfo.config.tileSize}px tiles`, 
+      'info'
+    );
   }
 
   public showHelp(): void {

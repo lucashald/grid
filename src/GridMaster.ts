@@ -357,26 +357,28 @@ export class GridMaster {
   constructor(containerId: string, config?: Partial<GridConfig>) {
     console.log('🎮 GridMaster initializing...');
     
-    // Initialize configuration
-    this.gridConfig = { ...DEFAULT_GRID_CONFIG, ...config };
-    this.appState = { ...DEFAULT_APP_STATE, gridConfig: this.gridConfig };
-    
     // Get container element
     const container = document.getElementById(containerId);
     if (!container) {
       throw new Error(`Container element with id "${containerId}" not found`);
     }
 
-    // Initialize Konva stage
+    // Initialize Konva stage - START WITH MINIMAL SIZE
     this.stage = new Konva.Stage({
       container: container,
-      width: this.gridConfig.tileSize * this.gridConfig.width,
-      height: this.gridConfig.tileSize * this.gridConfig.height,
+      width: 800, // Temporary - GridRenderer will resize this
+      height: 600, // Temporary - GridRenderer will resize this
     });
 
-    // Initialize grid system
-    this.gridRenderer = new GridRenderer(this.stage, this.gridConfig);
-    this.gridState = new GridState(this.gridConfig.width, this.gridConfig.height);
+    // Initialize GridRenderer FIRST - it calculates responsive config
+    this.gridRenderer = new GridRenderer(this.stage, config);
+    
+    // Get the calculated responsive configuration
+    this.gridConfig = this.gridRenderer.getConfig();
+    this.appState = { ...DEFAULT_APP_STATE, gridConfig: this.gridConfig };
+
+    // Initialize GridState with GridRenderer reference
+    this.gridState = new GridState(this.gridRenderer);
 
     // Create object and UI layers
     this.objectLayer = new Konva.Layer({ name: 'object-layer' });
@@ -386,8 +388,11 @@ export class GridMaster {
     this.stage.add(this.objectLayer);
     this.stage.add(this.uiLayer);
 
-    // Initialize the grid
+    // Initialize the grid (GridRenderer handles responsive sizing)
     this.gridRenderer.initialize();
+    
+    // Setup resize handling
+    this.setupResizeHandling();
     
     // Setup event handlers
     this.setupEventHandlers();
@@ -395,9 +400,31 @@ export class GridMaster {
     // Add test objects
     this.addTestObjects();
 
-    console.log('✅ GridMaster ready');
-    console.log(`Grid: ${this.gridConfig.width}x${this.gridConfig.height} tiles`);
-    console.log(`Canvas: ${this.stage.width()}x${this.stage.height()} pixels`);
+    console.log('✅ GridMaster ready with responsive grid');
+    const dimensions = this.gridRenderer.getDimensions();
+    console.log(`Grid: ${dimensions.width}x${dimensions.height} tiles at ${dimensions.tileSize}px`);
+    console.log(`Canvas: ${this.gridRenderer.getCanvasWidth()}x${this.gridRenderer.getCanvasHeight()} pixels`);
+  }
+
+  /**
+   * Setup grid resize handling
+   */
+  private setupResizeHandling(): void {
+    window.addEventListener('gridResize', ((e: CustomEvent) => {
+      const { oldConfig, newConfig } = e.detail;
+      console.log('🔄 GridMaster handling grid resize...');
+      
+      // Update our stored config
+      this.gridConfig = newConfig;
+      this.appState.gridConfig = newConfig;
+      
+      // Notify GridState of dimension changes
+      this.gridState.handleGridResize(newConfig.width, newConfig.height);
+      
+      // Redraw object layer to fit new grid
+      this.objectLayer.draw();
+      
+    }) as EventListener);
   }
 
   private setupEventHandlers(): void {
@@ -429,8 +456,8 @@ export class GridMaster {
   private handleCanvasClick(gridPos: GridPosition, e: Konva.KonvaEventObject<MouseEvent>): void {
     const target = e.target;
     const isBackground = target === this.stage || 
-                        target.getLayer() === this.gridRenderer.getBackgroundLayer() || 
-                        target.getLayer() === this.gridRenderer.getGridLayer();
+                         target.getLayer() === this.gridRenderer.getBackgroundLayer() || 
+                         target.getLayer() === this.gridRenderer.getGridLayer();
 
     if (isBackground) {
       // Clicked on empty space
@@ -503,7 +530,7 @@ export class GridMaster {
     console.log(`Right-clicked grid tile: (${gridPos.x}, ${gridPos.y})`);
     console.log(`Objects at position: ${objects.length}`);
     objects.forEach(obj => {
-      console.log(`  - ${obj.objectId} (${obj.objectType}) z:${obj.zIndex}`);
+      console.log(`   - ${obj.objectId} (${obj.objectType}) z:${obj.zIndex}`);
     });
   }
 
@@ -661,6 +688,24 @@ export class GridMaster {
     return moved;
   }
 
+  // Update all coordinate conversion methods to use GridRenderer
+  public pixelToGrid(pixel: PixelPosition): GridPosition {
+    return this.gridRenderer.pixelToGrid(pixel);
+  }
+
+  public gridToPixel(grid: GridPosition): PixelPosition {
+    return this.gridRenderer.gridToPixel(grid);
+  }
+
+  public snapToGrid(pixel: PixelPosition): PixelPosition {
+    return this.gridRenderer.snapToGrid(pixel);
+  }
+
+  public getTileSize(): number {
+    return this.gridRenderer.getDimensions().tileSize;
+  }
+
+  // Update canMoveObject to use GridRenderer for validation
   public canMoveObject(objectId: string, newPosition: GridPosition): boolean {
     const gridObject = this.objects.get(objectId);
     if (!gridObject) return false;
@@ -685,6 +730,12 @@ export class GridMaster {
     console.log(`Tool changed to: ${tool}`);
   }
 
+  // Update getGridConfig to return GridRenderer's config
+  public getGridConfig(): GridConfig {
+    return this.gridRenderer.getConfig();
+  }
+
+  // Update toggleGrid to use GridRenderer
   public toggleGrid(): void {
     this.gridRenderer.toggleGrid();
     this.appState.showGrid = this.gridRenderer.getConfig().showGrid;
@@ -760,23 +811,6 @@ export class GridMaster {
     console.log('✅ Test objects added using GridObject system');
   }
 
-  // Utility methods
-  public pixelToGrid(pixel: PixelPosition): GridPosition {
-    return this.gridRenderer.pixelToGrid(pixel);
-  }
-
-  public gridToPixel(grid: GridPosition): PixelPosition {
-    return this.gridRenderer.gridToPixel(grid);
-  }
-
-  public snapToGrid(pixel: PixelPosition): PixelPosition {
-    return this.gridRenderer.snapToGrid(pixel);
-  }
-
-  public getTileSize(): number {
-    return this.gridConfig.tileSize;
-  }
-
   // Getters
   public getStage(): Konva.Stage {
     return this.stage;
@@ -784,10 +818,6 @@ export class GridMaster {
 
   public getAppState(): AppState {
     return { ...this.appState }; // Return copy to prevent mutation
-  }
-
-  public getGridConfig(): GridConfig {
-    return this.gridRenderer.getConfig();
   }
 
   public getGridStats() {
@@ -798,7 +828,7 @@ export class GridMaster {
     console.log(`Found ${this.objects.size} objects:`);
     this.objects.forEach((gridObject, id) => {
       const pos = gridObject.getPosition();
-      console.log(`  ${id} (${gridObject.template.name}) at (${pos.x}, ${pos.y})`);
+      console.log(`   ${id} (${gridObject.template.name}) at (${pos.x}, ${pos.y})`);
     });
   }
 

@@ -1,7 +1,9 @@
 // src/grid/GridState.ts
 // Manages grid state: tile occupation, collision detection, z-index management
+// ALL GRID MATH REMOVED - Now uses GridRenderer for validation and calculations
 
 import { GridPosition, ObjectSize, GridObjectInstance, ZLayer } from '../types';
+import { GridRenderer } from './GridRenderer';
 
 interface OccupationInfo {
   objectId: string;
@@ -13,13 +15,12 @@ export class GridState {
   private occupiedTiles: Map<string, OccupationInfo[]> = new Map();
   private objectPositions: Map<string, GridPosition> = new Map();
   private objectSizes: Map<string, ObjectSize> = new Map();
-  private gridWidth: number;
-  private gridHeight: number;
+  private gridRenderer: GridRenderer;
 
-  constructor(width: number, height: number) {
-    this.gridWidth = width;
-    this.gridHeight = height;
-    console.log(`✅ GridState initialized (${width}x${height})`);
+  constructor(gridRenderer: GridRenderer) {
+    this.gridRenderer = gridRenderer;
+    const dimensions = gridRenderer.getDimensions();
+    console.log(`✅ GridState initialized (${dimensions.width}x${dimensions.height})`);
   }
 
   /**
@@ -38,37 +39,24 @@ export class GridState {
   }
 
   /**
-   * Check if a position is within grid bounds
+   * Check if a position is within grid bounds - USES GRIDRENDERER
    */
   public isValidPosition(position: GridPosition): boolean {
-    return position.x >= 0 && 
-           position.x < this.gridWidth && 
-           position.y >= 0 && 
-           position.y < this.gridHeight;
+    return this.gridRenderer.isValidGridPosition(position);
   }
 
   /**
-   * Check if an area (position + size) fits within grid bounds
+   * Check if an area (position + size) fits within grid bounds - USES GRIDRENDERER
    */
   public isValidArea(position: GridPosition, size: ObjectSize): boolean {
-    return this.isValidPosition(position) &&
-           position.x + size.width <= this.gridWidth &&
-           position.y + size.height <= this.gridHeight;
+    return this.gridRenderer.isValidObjectArea(position, size);
   }
 
   /**
-   * Get all positions that would be occupied by an object
+   * Get all positions that would be occupied by an object - USES GRIDRENDERER
    */
   public getOccupiedPositions(position: GridPosition, size: ObjectSize): GridPosition[] {
-    const positions: GridPosition[] = [];
-    
-    for (let x = position.x; x < position.x + size.width; x++) {
-      for (let y = position.y; y < position.y + size.height; y++) {
-        positions.push({ x, y });
-      }
-    }
-    
-    return positions;
+    return this.gridRenderer.getOccupiedPositionsForObject(position, size);
   }
 
   /**
@@ -96,13 +84,13 @@ export class GridState {
    * Check if an area can be placed (no blocking collisions)
    */
   public canPlaceObject(position: GridPosition, size: ObjectSize, zIndex: number, objectId?: string): boolean {
-    // Check bounds first
-    if (!this.isValidArea(position, size)) {
+    // Check bounds using GridRenderer
+    if (!this.gridRenderer.isValidObjectArea(position, size)) {
       return false;
     }
 
-    // Get all positions this object would occupy
-    const positions = this.getOccupiedPositions(position, size);
+    // Get all positions this object would occupy using GridRenderer
+    const positions = this.gridRenderer.getOccupiedPositionsForObject(position, size);
 
     // Check each position for conflicts
     for (const pos of positions) {
@@ -173,8 +161,8 @@ export class GridState {
     // Remove object if it already exists (for moves)
     this.removeObject(objectId);
 
-    // Get all positions to occupy
-    const positions = this.getOccupiedPositions(position, size);
+    // Get all positions to occupy using GridRenderer
+    const positions = this.gridRenderer.getOccupiedPositionsForObject(position, size);
 
     // Create occupation info
     const occupationInfo: OccupationInfo = {
@@ -210,8 +198,8 @@ export class GridState {
       return false; // Object not found
     }
 
-    // Get all positions to clear
-    const positions = this.getOccupiedPositions(position, size);
+    // Get all positions to clear using GridRenderer
+    const positions = this.gridRenderer.getOccupiedPositionsForObject(position, size);
 
     // Remove from all occupied positions
     for (const pos of positions) {
@@ -312,17 +300,18 @@ export class GridState {
   }
 
   /**
-   * Get all objects within a rectangular area
+   * Get all objects within a rectangular area - USES GRIDRENDERER
    */
   public getObjectsInArea(topLeft: GridPosition, bottomRight: GridPosition): OccupationInfo[] {
     const objects = new Map<string, OccupationInfo>();
-
-    for (let x = topLeft.x; x <= bottomRight.x; x++) {
-      for (let y = topLeft.y; y <= bottomRight.y; y++) {
-        const objectsAtPos = this.getAllObjectsAtPosition({ x, y });
-        for (const obj of objectsAtPos) {
-          objects.set(obj.objectId, obj);
-        }
+    
+    // Use GridRenderer to get positions in rectangle
+    const positions = this.gridRenderer.getPositionsInRectangle(topLeft, bottomRight);
+    
+    for (const pos of positions) {
+      const objectsAtPos = this.getAllObjectsAtPosition(pos);
+      for (const obj of objectsAtPos) {
+        objects.set(obj.objectId, obj);
       }
     }
 
@@ -347,33 +336,31 @@ export class GridState {
     occupiedTiles: number;
     gridSize: { width: number; height: number };
   } {
+    const dimensions = this.gridRenderer.getDimensions();
     return {
       totalObjects: this.objectPositions.size,
       occupiedTiles: this.occupiedTiles.size,
-      gridSize: { width: this.gridWidth, height: this.gridHeight }
+      gridSize: { width: dimensions.width, height: dimensions.height }
     };
   }
 
   /**
-   * Update grid dimensions
+   * Update grid dimensions (called when GridRenderer resizes)
    */
-  public updateDimensions(width: number, height: number): void {
-    this.gridWidth = width;
-    this.gridHeight = height;
-    
+  public handleGridResize(newWidth: number, newHeight: number): void {
     // Remove any objects that are now out of bounds
     const objectIds = Array.from(this.objectPositions.keys());
     for (const objectId of objectIds) {
       const position = this.objectPositions.get(objectId);
       const size = this.objectSizes.get(objectId);
       
-      if (position && size && !this.isValidArea(position, size)) {
+      if (position && size && !this.gridRenderer.isValidObjectArea(position, size)) {
         this.removeObject(objectId);
-        console.log(`⚠️ Object ${objectId} removed (out of bounds)`);
+        console.log(`⚠️ Object ${objectId} removed (out of bounds after resize)`);
       }
     }
     
-    console.log(`✅ Grid dimensions updated to ${width}x${height}`);
+    console.log(`✅ GridState updated for new dimensions: ${newWidth}x${newHeight}`);
   }
 
   /**
