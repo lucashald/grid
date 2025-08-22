@@ -1,29 +1,54 @@
+// src/test/setup.ts
 import { vi } from 'vitest';
-import 'jsdom-global/register';
 
-// Mock Konva for testing
-vi.mock('konva', () => ({
-  Stage: vi.fn(() => ({
+// Mock Konva completely to avoid canvas dependency
+vi.mock('konva', () => {
+  const mockStage = {
     add: vi.fn(),
     on: vi.fn(),
-    getContainer: vi.fn()
-  })),
-  Layer: vi.fn(() => ({
+    width: vi.fn(() => 960),
+    height: vi.fn(() => 720),
+    getPointerPosition: vi.fn(() => ({ x: 100, y: 100 })),
+    destroy: vi.fn(),
+  };
+
+  const mockLayer = {
     add: vi.fn(),
-    draw: vi.fn()
-  })),
-  Image: vi.fn(() => ({
-    setAttrs: vi.fn(),
-    on: vi.fn()
-  })),
-  Group: vi.fn(() => ({
-    add: vi.fn(),
-    draggable: vi.fn()
-  }))
-}));
+    draw: vi.fn(),
+    destroyChildren: vi.fn(),
+  };
+
+  const mockRect = {
+    x: vi.fn(() => 50),
+    y: vi.fn(() => 50),
+    on: vi.fn(),
+    zIndex: vi.fn(),
+  };
+
+  const mockLine = {
+    // Line doesn't need methods for our tests
+  };
+
+  return {
+    default: {
+      Stage: vi.fn(() => mockStage),
+      Layer: vi.fn(() => mockLayer),
+      Rect: vi.fn(() => mockRect),
+      Line: vi.fn(() => mockLine),
+    },
+    Stage: vi.fn(() => mockStage),
+    Layer: vi.fn(() => mockLayer),
+    Rect: vi.fn(() => mockRect),
+    Line: vi.fn(() => mockLine),
+  };
+});
 
 // Mock file reading for uploads
 global.FileReader = class {
   readAsDataURL = vi.fn();
   onload = vi.fn();
 } as any;
+
+// Mock requestAnimationFrame  
+global.requestAnimationFrame = vi.fn((cb) => setTimeout(cb, 16));
+global.cancelAnimationFrame = vi.fn();
