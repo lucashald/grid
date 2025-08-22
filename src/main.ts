@@ -1,12 +1,11 @@
 // src/main.ts
-// Grid Master Application with PlaceTool Integration
+// Grid Master Application with Single Object Management System
 
 import { GridMaster } from './GridMaster';
 import { EventManager, EventManagerCallbacks } from './ui/EventManager';
 import { Sidebar, SidebarCallbacks } from './ui/Sidebar';
 import { PlaceTool } from './tools/PlaceTool';
 import { ToolMode, GridPosition, ObjectSize, ObjectType, GridObjectInstance } from './types';
-import Konva from 'konva';
 
 console.log('🎮 Grid Master starting...');
 
@@ -71,11 +70,18 @@ class EnhancedGridMasterApp {
         console.log(`🏁 Drag ended: ${objectId} at (${position.x},${position.y}) - ${status}`);
         this.showStatus(`Move ${status}`, success ? 'success' : 'error');
       },
-      // New PlaceTool callbacks:
+      // PlaceTool callbacks - create GridObject for visual representation
       onObjectPlaced: (instance: GridObjectInstance) => {
-        this.createVisualObject(instance);
         const template = this.eventManager.getPlaceTool().getTemplate(instance.templateId);
-        this.showStatus(`Placed: ${template?.name || instance.templateId}`, 'success');
+        if (template) {
+          // Create a GridObject for this placed instance (but don't place in GridState again)
+          const gridObject = this.createGridObjectForInstance(instance, template);
+          if (gridObject) {
+            this.showStatus(`Placed: ${template.name}`, 'success');
+          } else {
+            this.showStatus(`Failed to create visual: ${template.name}`, 'error');
+          }
+        }
       },
       onPlacementFailed: (reason: string, position: GridPosition) => {
         this.showStatus(`Cannot place: ${reason}`, 'error');
@@ -102,7 +108,6 @@ class EnhancedGridMasterApp {
         console.log(`🔧 Main: Tool change requested: ${tool}`);
         this.gridMaster.setTool(tool);
         this.eventManager.setTool(tool);
-        this.updateObjectInteractivity(); // Add this line
         this.showStatus(`Tool: ${tool}`, 'info');
       },
       onSizeChanged: (size: ObjectSize) => {
@@ -154,169 +159,139 @@ class EnhancedGridMasterApp {
     });
   }
 
-  // Create visual representation of placed objects
-  private createVisualObject(instance: GridObjectInstance): void {
-    const template = this.eventManager.getPlaceTool().getTemplate(instance.templateId);
-    if (!template) {
-      console.error(`Template not found: ${instance.templateId}`);
-      return;
+  // Status display method - delegates to sidebar
+  private showStatus(message: string, type: 'success' | 'error' | 'info' = 'info'): void {
+    if (this.sidebar) {
+      switch (type) {
+        case 'success':
+          this.sidebar.showSuccess(message);
+          break;
+        case 'error':
+          this.sidebar.showError(message);
+          break;
+        case 'info':
+        default:
+          this.sidebar.showInfo(message);
+          break;
+      }
     }
-
-    const pixelPos = this.gridMaster.gridToPixel(instance.position);
-    const stage = this.gridMaster.getStage();
-    
-    // Find or create object layer
-    let objectLayer = stage.findOne('.object-layer') as Konva.Layer;
-    if (!objectLayer) {
-      objectLayer = new Konva.Layer({ name: 'object-layer' });
-      stage.add(objectLayer);
-    }
-
-    // Create Konva group for the object
-    const group = new Konva.Group({
-      x: pixelPos.x,
-      y: pixelPos.y,
-      draggable: false, // Will be enabled based on tool
-      name: 'game-object'
-    });
-
-    // Store object data for later reference
-    group.setAttr('objectId', instance.id);
-    group.setAttr('templateId', instance.templateId);
-    group.setAttr('gridPosition', instance.position);
-
-    // Try to load image, fallback to colored rectangle
-    this.loadObjectImage(template.imageUrl, template, group, () => {
-      objectLayer.add(group);
-      
-      // Set z-index AFTER adding to layer (Konva needs parent first)
-      const childIndex = Math.min(instance.zIndex, objectLayer.children.length - 1);
-      group.zIndex(childIndex);
-      
-      objectLayer.draw();
-      
-      // Setup drag handlers
-      this.eventManager.setupObjectDragHandlers(group, instance.id);
-      
-      // Update draggability based on current tool
-      this.updateObjectInteractivity();
-      
-      console.log(`✅ Visual object created: ${template.name} at z-index ${childIndex}`);
-    });
+    console.log(`📢 Status (${type}): ${message}`);
   }
 
-  private updateObjectInteractivity(): void {
-    const stage = this.gridMaster.getStage();
-    const objectLayer = stage.findOne('.object-layer') as Konva.Layer;
-    if (!objectLayer) return;
+  // File upload handling
+  private handleFileUpload(files: FileList): void {
+    console.log(`📁 Processing ${files.length} files...`);
     
-    const currentTool = this.sidebar.getCurrentTool();
-    const objects = objectLayer.find('.game-object');
-    
-    objects.forEach(obj => {
-      const isDraggable = currentTool === ToolMode.MOVE;
-      obj.draggable(isDraggable);
+    Array.from(files).forEach((file, index) => {
+      console.log(`📄 File ${index + 1}: ${file.name} (${this.formatFileSize(file.size)})`);
+      
+      // Create a mock character template from uploaded file
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const imageUrl = e.target?.result as string;
+        if (imageUrl) {
+          this.addCustomCharacterFromUpload(file.name, imageUrl);
+        }
+      };
+      reader.readAsDataURL(file);
     });
     
-    console.log(`Updated ${objects.length} objects for tool: ${currentTool}`);
+    this.showStatus(`${files.length} file(s) uploaded`, 'success');
   }
 
-  // Image loading with fallback
-  private loadObjectImage(
-    imageUrl: string, 
-    template: any, 
-    group: Konva.Group, 
-    onComplete: () => void
-  ): void {
-    if (!imageUrl || (!imageUrl.startsWith('http') && !imageUrl.startsWith('/assets'))) {
-      // Create fallback colored rectangle
-      this.createFallbackVisual(template, group);
-      onComplete();
-      return;
-    }
+  // AI generation handling (mock implementation)
+  private handleAIGeneration(prompt: string, size: ObjectSize, type: ObjectType): void {
+    console.log(`🤖 AI Generation started:`);
+    console.log(`   Prompt: "${prompt}"`);
+    console.log(`   Size: ${size.width}x${size.height}`);
+    console.log(`   Type: ${type}`);
+    
+    // Simulate AI generation delay
+    setTimeout(() => {
+      this.addMockAICharacter(prompt, size, type);
+      this.sidebar.enableGenerateButton();
+      this.showStatus('AI character generated!', 'success');
+    }, 2000 + Math.random() * 1000); // 2-3 second delay
+  }
 
-    const imageObj = new Image();
-    imageObj.onload = () => {
-      const image = new Konva.Image({
-        x: 1,
-        y: 1,
-        image: imageObj,
-        width: template.size.width * 48 - 2, // Assuming 48px tiles
-        height: template.size.height * 48 - 2,
-      });
-      group.add(image);
-      onComplete();
+  // Create mock AI character
+  private addMockAICharacter(prompt: string, size: ObjectSize, type: ObjectType): void {
+    const placeTool = this.eventManager.getPlaceTool();
+    const shortPrompt = prompt.substring(0, 20).replace(/[^a-zA-Z0-9\s]/g, '');
+    const characterName = shortPrompt || 'AI Character';
+    
+    const template = {
+      id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      name: characterName,
+      type: type,
+      size: size,
+      imageUrl: '', // No image for mock
+      defaultZIndex: this.getDefaultZIndex(type),
+      tags: ['ai-generated', type, 'custom'],
+      description: `AI generated: ${prompt}`,
+      customProperties: {}
     };
     
-    imageObj.onerror = () => {
-      console.warn(`Failed to load image: ${imageUrl}, using fallback`);
-      this.createFallbackVisual(template, group);
-      onComplete();
-    };
-    
-    imageObj.src = imageUrl;
+    placeTool.addTemplate(template);
+    // Also add to GridMaster's template system
+    this.gridMaster.addTemplate(template);
+    this.updateCharacterLibrary();
+    console.log(`✅ Added AI character: ${characterName}`);
   }
 
-  // Create colored rectangle fallback
-  private createFallbackVisual(template: any, group: Konva.Group): void {
-    const colors = {
-      character: '#4CAF50',
-      terrain: '#8D6E63',
-      vehicle: '#FF5722',
-      prop: '#2196F3',
-      effect: '#9C27B0',
-      spell: '#E91E63'
-    };
-
-    const color = colors[template.type as keyof typeof colors] || '#666666';
+  // Create character from uploaded file
+  private addCustomCharacterFromUpload(filename: string, imageUrl: string): void {
+    const placeTool = this.eventManager.getPlaceTool();
+    const characterName = filename.replace(/\.[^/.]+$/, ''); // Remove extension
     
-    const rect = new Konva.Rect({
-      x: 1,
-      y: 1,
-      width: template.size.width * 48 - 2,
-      height: template.size.height * 48 - 2,
-      fill: color,
-      stroke: this.darkenColor(color, 0.2),
-      strokeWidth: 2,
-    });
-
-    // Add type label
-    const label = new Konva.Text({
-      x: 4,
-      y: 4,
-      text: template.type.charAt(0).toUpperCase(),
-      fontSize: 12,
-      fontFamily: 'Arial',
-      fill: 'white',
-      listening: false
-    });
-
-    // Add name label for larger objects
-    if (template.size.width > 1 || template.size.height > 1) {
-      const nameLabel = new Konva.Text({
-        x: 4,
-        y: 18,
-        text: template.name.substring(0, 8), // Truncate long names
-        fontSize: 10,
-        fontFamily: 'Arial',
-        fill: 'white',
-        listening: false
-      });
-      group.add(nameLabel);
-    }
-
-    group.add(rect);
-    group.add(label);
+    const template = {
+      id: `upload-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      name: characterName,
+      type: ObjectType.CHARACTER,
+      size: { width: 1, height: 1 },
+      imageUrl: imageUrl,
+      defaultZIndex: this.getDefaultZIndex(ObjectType.CHARACTER),
+      tags: ['uploaded', 'character', 'custom'],
+      description: `Uploaded: ${filename}`,
+      customProperties: {}
+    };
+    
+    placeTool.addTemplate(template);
+    // Also add to GridMaster's template system
+    this.gridMaster.addTemplate(template);
+    this.updateCharacterLibrary();
+    console.log(`✅ Added uploaded character: ${characterName}`);
   }
 
-  private darkenColor(color: string, amount: number): string {
-    // Simple color darkening
-    const hex = color.replace('#', '');
-    const num = parseInt(hex, 16);
-    const r = Math.max(0, (num >> 16) - Math.round(255 * amount));
-    const g = Math.max(0, ((num >> 8) & 0x00FF) - Math.round(255 * amount));
-    const b = Math.max(0, (num & 0x0000FF) - Math.round(255 * amount));
-    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+  // Create a GridObject for an instance that's already placed in GridState
+  private createGridObjectForInstance(instance: GridObjectInstance, template: GridObjectTemplate): any {
+    // Import the GridObject class (we'll need to expose it from GridMaster)
+    // For now, let's manually create the visual and add it to GridMaster's tracking
+    return this.gridMaster.addExistingObject(instance, template);
+  }
+
+  // Helper method for getting default z-index
+  private getDefaultZIndex(type: ObjectType): number {
+    const zIndexMap = {
+      [ObjectType.TERRAIN]: 0,
+      [ObjectType.VEHICLE]: 100,
+      [ObjectType.PROP]: 200,
+      [ObjectType.EFFECT]: 300,
+      [ObjectType.CHARACTER]: 400,
+      [ObjectType.SPELL]: 500
+    };
+    return zIndexMap[type] || 200;
+  }
+
+  // Format file size for display
+  private formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   // Update character library with filtered templates
@@ -378,294 +353,18 @@ class EnhancedGridMasterApp {
   private handleToolAction(tool: ToolMode, position: GridPosition, target?: any): void {
     switch (tool) {
       case ToolMode.PLACE:
-        console.log(`Place action handled by PlaceTool`);
-        break;
-        
-      case ToolMode.SELECT:
-        console.log(`Select action at (${position.x}, ${position.y})`);
-        break;
-        
-      case ToolMode.DELETE:
-        if (target) {
-          console.log(`Delete action: ${target} at (${position.x}, ${position.y})`);
-          this.deleteObject(target);
-        } else {
-          this.showStatus(`Nothing to delete`, 'info');
-        }
-        break;
-        
-      case ToolMode.MOVE:
-        console.log(`Move action at (${position.x}, ${position.y})`);
-        break;
-    }
-  }
-
-  private deleteObject(objectId: string): void {
-    const stage = this.gridMaster.getStage();
-    const objectLayer = stage.findOne('.object-layer') as Konva.Layer;
-    
-    if (!objectLayer) {
-      console.warn('No object layer found');
-      this.showStatus('No objects to delete', 'error');
-      return;
-    }
-
-    // Find the Konva object
-    const konvaObject = objectLayer.findOne(`[objectId="${objectId}"]`) as Konva.Group;
-    
-    if (!konvaObject) {
-      console.warn(`Konva object not found: ${objectId}`);
-      this.showStatus('Object not found', 'error');
-      return;
-    }
-
-    // Get object position for grid state cleanup
-    const gridPosition = konvaObject.getAttr('gridPosition') as GridPosition;
-    
-    // Remove from grid state first
-    const gridStateRemoved = (this.gridMaster as any).gridState.removeObject(objectId);
-    
-    if (!gridStateRemoved) {
-      console.warn(`Failed to remove from grid state: ${objectId}`);
-    }
-
-    // Remove visual object
-    konvaObject.destroy();
-    objectLayer.draw();
-    
-    console.log(`✅ Deleted object: ${objectId} at (${gridPosition?.x}, ${gridPosition?.y})`);
-    this.showStatus('Object deleted', 'success');
-  }
-
-  public debugObjectLayer(): void {
-    const stage = this.gridMaster.getStage();
-    const objectLayer = stage.findOne('.object-layer') as Konva.Layer;
-    
-    if (!objectLayer) {
-      console.log('No object layer found');
-      return;
-    }
-    
-    const objects = objectLayer.find('.game-object');
-    console.log(`Found ${objects.length} objects in layer:`);
-    
-    objects.forEach((obj, index) => {
-      const objectId = obj.getAttr('objectId');
-      const templateId = obj.getAttr('templateId');
-      const position = obj.getAttr('gridPosition');
-      console.log(`  ${index}: ${objectId} (${templateId}) at (${position?.x}, ${position?.y})`);
-    });
-  }
-
-  // Create visual representation of placed objects
-  private createVisualObject(instance: GridObjectInstance): void {
-    const template = this.eventManager.getPlaceTool().getTemplate(instance.templateId);
-    if (!template) {
-      console.error(`Template not found: ${instance.templateId}`);
-      return;
-    }
-
-    const pixelPos = this.gridMaster.gridToPixel(instance.position);
-    const stage = this.gridMaster.getStage();
-    
-    // Find or create object layer
-    let objectLayer = stage.findOne('.object-layer') as Konva.Layer;
-    if (!objectLayer) {
-      objectLayer = new Konva.Layer({ name: 'object-layer' });
-      stage.add(objectLayer);
-    }
-
-    // Create Konva group for the object
-    const group = new Konva.Group({
-      x: pixelPos.x,
-      y: pixelPos.y,
-      draggable: false, // Will be enabled based on tool
-      name: 'game-object'
-    });
-
-    // Store object data for later reference
-    group.setAttr('objectId', instance.id);
-    group.setAttr('templateId', instance.templateId);
-    group.setAttr('gridPosition', instance.position);
-
-    // Try to load image, fallback to colored rectangle
-    this.loadObjectImage(template.imageUrl, template, group, () => {
-      objectLayer.add(group);
-      
-      // Set z-index AFTER adding to layer (Konva needs parent first)
-      const childIndex = Math.min(instance.zIndex, objectLayer.children.length - 1);
-      group.zIndex(childIndex);
-      
-      objectLayer.draw();
-      
-      // Setup drag handlers
-      this.eventManager.setupObjectDragHandlers(group, instance.id);
-      
-      // Update draggability based on current tool
-      this.updateObjectInteractivity();
-      
-      console.log(`✅ Visual object created: ${template.name} at z-index ${childIndex}`);
-    });
-  }
-
-  // Image loading with fallback
-  private loadObjectImage(
-    imageUrl: string, 
-    template: any, 
-    group: Konva.Group, 
-    onComplete: () => void
-  ): void {
-    if (!imageUrl || (!imageUrl.startsWith('http') && !imageUrl.startsWith('/assets'))) {
-      // Create fallback colored rectangle
-      this.createFallbackVisual(template, group);
-      onComplete();
-      return;
-    }
-
-    const imageObj = new Image();
-    imageObj.onload = () => {
-      const image = new Konva.Image({
-        x: 1,
-        y: 1,
-        image: imageObj,
-        width: template.size.width * 48 - 2, // Assuming 48px tiles
-        height: template.size.height * 48 - 2,
-      });
-      group.add(image);
-      onComplete();
-    };
-    
-    imageObj.onerror = () => {
-      console.warn(`Failed to load image: ${imageUrl}, using fallback`);
-      this.createFallbackVisual(template, group);
-      onComplete();
-    };
-    
-    imageObj.src = imageUrl;
-  }
-
-  // Create colored rectangle fallback
-  private createFallbackVisual(template: any, group: Konva.Group): void {
-    const colors = {
-      character: '#4CAF50',
-      terrain: '#8D6E63',
-      vehicle: '#FF5722',
-      prop: '#2196F3',
-      effect: '#9C27B0',
-      spell: '#E91E63'
-    };
-
-    const color = colors[template.type as keyof typeof colors] || '#666666';
-    
-    const rect = new Konva.Rect({
-      x: 1,
-      y: 1,
-      width: template.size.width * 48 - 2,
-      height: template.size.height * 48 - 2,
-      fill: color,
-      stroke: this.darkenColor(color, 0.2),
-      strokeWidth: 2,
-    });
-
-    // Add type label
-    const label = new Konva.Text({
-      x: 4,
-      y: 4,
-      text: template.type.charAt(0).toUpperCase(),
-      fontSize: 12,
-      fontFamily: 'Arial',
-      fill: 'white',
-      listening: false
-    });
-
-    // Add name label for larger objects
-    if (template.size.width > 1 || template.size.height > 1) {
-      const nameLabel = new Konva.Text({
-        x: 4,
-        y: 18,
-        text: template.name.substring(0, 8), // Truncate long names
-        fontSize: 10,
-        fontFamily: 'Arial',
-        fill: 'white',
-        listening: false
-      });
-      group.add(nameLabel);
-    }
-
-    group.add(rect);
-    group.add(label);
-  }
-
-  private darkenColor(color: string, amount: number): string {
-    // Simple color darkening
-    const hex = color.replace('#', '');
-    const num = parseInt(hex, 16);
-    const r = Math.max(0, (num >> 16) - Math.round(255 * amount));
-    const g = Math.max(0, ((num >> 8) & 0x00FF) - Math.round(255 * amount));
-    const b = Math.max(0, (num & 0x0000FF) - Math.round(255 * amount));
-    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-  }
-
-  // Update character library with filtered templates
-  private updateCharacterLibrary(): void {
-    const placeTool = this.eventManager.getPlaceTool();
-    const currentSize = this.sidebar.getCurrentSize();
-    
-    // Get templates matching current size, or all if 1x1
-    const filter = currentSize.width === 1 && currentSize.height === 1 
-      ? undefined 
-      : { size: currentSize };
-    
-    const templates = placeTool.getAvailableTemplates(filter);
-    
-    const characters = templates.map(template => ({
-      id: template.id,
-      name: template.name,
-      imageUrl: template.imageUrl,
-      type: template.type
-    }));
-    
-    this.sidebar.updateCharacterLibrary(characters);
-    
-    // Setup click handlers for character selection
-    setTimeout(() => this.setupCharacterLibraryHandlers(), 100);
-  }
-
-  // Setup character library click handlers
-  private setupCharacterLibraryHandlers(): void {
-    // Remove existing handlers by cloning elements
-    document.querySelectorAll('.character-thumb[data-character-id]').forEach(thumb => {
-      const newThumb = thumb.cloneNode(true);
-      thumb.parentNode?.replaceChild(newThumb, thumb);
-    });
-    
-    // Add new handlers
-    document.querySelectorAll('.character-thumb[data-character-id]').forEach(thumb => {
-      thumb.addEventListener('click', (e) => {
-        const characterId = (e.currentTarget as HTMLElement).getAttribute('data-character-id');
-        if (characterId) {
-          const success = this.eventManager.selectTemplate(characterId);
+        // Handle placement directly through GridMaster instead of PlaceTool
+        const selectedTemplate = this.eventManager.getPlaceTool().getSelectedTemplate();
+        if (selectedTemplate) {
+          const success = this.gridMaster.placeObjectFromTemplate(selectedTemplate, position);
           if (success) {
-            // Update visual selection
-            document.querySelectorAll('.character-thumb').forEach(t => t.classList.remove('selected'));
-            thumb.classList.add('selected');
-            
-            // Switch to place tool if not already selected
-            if (this.sidebar.getCurrentTool() !== ToolMode.PLACE) {
-              this.sidebar.setToolFromExternal(ToolMode.PLACE);
-              this.gridMaster.setTool(ToolMode.PLACE);
-              this.eventManager.setTool(ToolMode.PLACE);
-            }
+            this.showStatus(`Placed: ${selectedTemplate.name}`, 'success');
+          } else {
+            this.showStatus(`Cannot place: collision or invalid position`, 'error');
           }
+        } else {
+          this.showStatus('No template selected', 'error');
         }
-      });
-    });
-  }
-
-  private handleToolAction(tool: ToolMode, position: GridPosition, target?: any): void {
-    switch (tool) {
-      case ToolMode.PLACE:
-        console.log(`Place action handled by PlaceTool`);
         break;
         
       case ToolMode.SELECT:
@@ -675,7 +374,13 @@ class EnhancedGridMasterApp {
       case ToolMode.DELETE:
         if (target) {
           console.log(`Delete action: ${target} at (${position.x}, ${position.y})`);
-          this.deleteObject(target);
+          // Use GridMaster's removeObject method instead of our own
+          const success = this.gridMaster.removeObject(target);
+          if (success) {
+            this.showStatus('Object deleted', 'success');
+          } else {
+            this.showStatus('Failed to delete object', 'error');
+          }
         } else {
           this.showStatus(`Nothing to delete`, 'info');
         }
@@ -687,64 +392,7 @@ class EnhancedGridMasterApp {
     }
   }
 
-  private deleteObject(objectId: string): void {
-    const stage = this.gridMaster.getStage();
-    const objectLayer = stage.findOne('.object-layer') as Konva.Layer;
-    
-    if (!objectLayer) {
-      console.warn('No object layer found');
-      this.showStatus('No objects to delete', 'error');
-      return;
-    }
-
-    // Find the Konva object
-    const konvaObject = objectLayer.findOne(`[objectId="${objectId}"]`) as Konva.Group;
-    
-    if (!konvaObject) {
-      console.warn(`Konva object not found: ${objectId}`);
-      this.showStatus('Object not found', 'error');
-      return;
-    }
-
-    // Get object position for grid state cleanup
-    const gridPosition = konvaObject.getAttr('gridPosition') as GridPosition;
-    
-    // Remove from grid state first
-    const gridStateRemoved = (this.gridMaster as any).gridState.removeObject(objectId);
-    
-    if (!gridStateRemoved) {
-      console.warn(`Failed to remove from grid state: ${objectId}`);
-    }
-
-    // Remove visual object
-    konvaObject.destroy();
-    objectLayer.draw();
-    
-    console.log(`✅ Deleted object: ${objectId} at (${gridPosition?.x}, ${gridPosition?.y})`);
-    this.showStatus('Object deleted', 'success');
-  }
-
-  public debugObjectLayer(): void {
-    const stage = this.gridMaster.getStage();
-    const objectLayer = stage.findOne('.object-layer') as Konva.Layer;
-    
-    if (!objectLayer) {
-      console.log('No object layer found');
-      return;
-    }
-    
-    const objects = objectLayer.find('.game-object');
-    console.log(`Found ${objects.length} objects in layer:`);
-    
-    objects.forEach((obj, index) => {
-      const objectId = obj.getAttr('objectId');
-      const templateId = obj.getAttr('templateId');
-      const position = obj.getAttr('gridPosition');
-      console.log(`  ${index}: ${objectId} (${templateId}) at (${position?.x}, ${position?.y})`);
-    });
-  }
-
-  // Public API
+  // Public API methods
   public getGridMaster(): GridMaster {
     return this.gridMaster;
   }
@@ -761,6 +409,10 @@ class EnhancedGridMasterApp {
 
   public showHelp(): void {
     this.sidebar.showKeyboardShortcuts();
+  }
+
+  public debugObjectLayer(): void {
+    this.gridMaster.debugObjectLayer();
   }
 
   public destroy(): void {

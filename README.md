@@ -7,291 +7,360 @@ Key Innovation: Unlike existing battle map tools that only work with developer-c
 Tech Stack: Built with TypeScript and Konva.js for high-performance canvas rendering, ensuring smooth character manipulation even with hundreds of pieces. The frontend handles complex grid logic, multi-tile character management, and real-time interactions. Backend integration with AI APIs (OpenAI/Midjourney) for character generation, with plans for Flask server deployment for familiar Python development.
 Market Opportunity: Targets tabletop gamers, game masters, content creators, and educators who need custom visual assets. The rise of online RPGs and AI image generation creates perfect timing for this innovative tool.
 Competitive Advantage: First-to-market AI-integrated grid system with true multi-tile character support and unlimited asset generation.
+# Grid Master - Architecture Documentation
 
-Grid Master: Technical Architecture Overview
-Core Application Structure: The GridMasterApp class serves as the main orchestrator, managing the Konva.js stage and coordinating between specialized subsystems. This central class initializes the canvas, manages layers (background, grid, characters), and handles the primary event loop.
-Character Management System: The CharacterPlacer class handles all character-related operations including placement validation, collision detection, and multi-tile character support. It maintains a registry of PlacedCharacter objects, each containing position data, size information, and references to their Konva visual elements. The CharacterTemplate interface defines reusable character blueprints, while CharacterInstance represents actual placed characters on the grid.
-Grid Infrastructure: Core types include GridPosition for tile coordinates, CharacterSize for multi-tile dimensions, and GridConfig for customizable grid properties. The coordinate system seamlessly converts between pixel positions and grid tiles, enabling precise character placement and drag-and-drop functionality.
-Canvas Rendering: Built on Konva.js layer architecture - backgroundLayer for solid colors, gridLayer for visual grid lines, and characterLayer for all character objects. Each character renders as a Konva.Group containing images and visual indicators.
-State Management: The system tracks occupied tiles using efficient Set data structures, maintains character relationships through Maps, and provides undo/redo functionality through command pattern implementation. This architecture ensures scalable performance even with hundreds of characters.
+## Overview
 
-## **Grid Master: Developer Contribution Guide**
+Grid Master is a TypeScript-based grid system for interactive object placement and manipulation, built with Konva.js for high-performance canvas rendering. The architecture separates concerns into distinct, testable components while maintaining a unified object management system.
 
-**Development Environment:** Project uses TypeScript with Vite for fast development builds and hot module replacement. No complex framework dependencies - just vanilla TypeScript with Konva.js for canvas manipulation. Standard npm workflow: `npm install` then `npm run dev` for local development server.
+## Core Architecture Principles
 
-**Code Organization:** All source files live in `/src` with modular TypeScript classes. Main entry point is `main.ts` containing the application bootstrapping and primary game loop. Character management logic is isolated in dedicated classes for easy testing and extension.
+### 1. Single Source of Truth
+- **GridMaster** is the central orchestrator for all object management
+- All objects use the unified **GridObject** system for consistent behavior
+- **GridState** maintains the authoritative spatial data structure
 
-**Key Patterns:** Uses composition over inheritance - characters are data objects with attached Konva visual components rather than heavy class hierarchies. Event-driven architecture with clear separation between UI interactions and game logic. Immutable position updates prevent state corruption during drag operations.
+### 2. Separation of Concerns
+- **Rendering**: GridRenderer handles all visual grid operations
+- **State Management**: GridState manages spatial relationships and collision detection
+- **Object Behavior**: GridObject encapsulates individual object logic
+- **User Interaction**: EventManager handles input and tool coordination
+- **UI Controls**: Sidebar manages user interface elements
 
-**Testing Strategy:** Unit tests focus on grid coordinate calculations, character placement validation, and collision detection algorithms. Canvas rendering is tested through integration tests verifying visual state matches logical state.
+### 3. Event-Driven Communication
+- Components communicate through callback interfaces
+- Loose coupling enables independent testing and modification
+- Clear data flow from user actions to visual updates
 
-**Contribution Areas:** Character AI integration (API calls), file upload handling, advanced character templates, mobile touch optimization, collaborative editing features, and performance optimization for large grids. Each area has clear interfaces and can be developed independently.
+## Component Architecture
 
-**Performance Considerations:** Konva objects are pooled and reused. Grid calculations use efficient Set/Map structures. Large character movements batch updates to prevent rendering thrash.
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   main.ts       │    │   Sidebar.ts     │    │ EventManager.ts │
+│ (Orchestrator)  │◄──►│ (UI Controls)    │◄──►│ (Input Handler) │
+└─────────┬───────┘    └──────────────────┘    └─────────┬───────┘
+          │                                              │
+          ▼                                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    GridMaster.ts                                │
+│                  (Central Coordinator)                         │
+├─────────────────┬─────────────────┬─────────────────┬─────────┤
+│   GridRenderer  │   GridState     │   GridObject    │ PlaceTool│
+│   (Visuals)     │   (Spatial)     │   (Behavior)    │ (Logic) │
+└─────────────────┴─────────────────┴─────────────────┴─────────┘
+          │                 │                 │             │
+          ▼                 ▼                 ▼             ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ Konva.js Canvas │ │ Collision Maps  │ │ Konva.Groups    │ │ Template System │
+└─────────────────┘ └─────────────────┘ └─────────────────┘ └─────────────────┘
+```
 
-Grid Master - Complete System Architecture
-Project Structure Overview
-src/
-├── main.ts                     # Application entry point
-├── GridMaster.ts               # Main orchestrator class
-├── types.ts                    # All TypeScript interfaces & enums
-├── grid/
-│   ├── GridRenderer.ts         # Grid rendering & coordinates
-│   └── GridState.ts           # Tile occupation & collision
-├── ui/
-│   ├── EventManager.ts        # Canvas event handling
-│   └── Sidebar.ts             # UI controls & interactions
-└── test/
-    ├── setup.ts               # Test environment setup
-    ├── types.test.ts          # Type validation tests
-    ├── GridMaster.test.ts     # Main class tests
-    ├── grid-system.test.ts    # Grid classes tests
-    └── ui-components.test.ts  # UI classes tests
+## Core Components
 
-Core Type System (types.ts)
-Basic Types
+### GridMaster (Central Orchestrator)
 
-GridPosition - Grid coordinates {x, y}
-ObjectSize - Object dimensions {width, height}
-PixelPosition - Canvas pixel coordinates
-GridConfig - Grid appearance settings
+**Responsibilities:**
+- Application lifecycle management
+- Object creation and destruction coordination
+- Tool state management
+- Public API for external interactions
 
-Key Enums
-typescriptObjectType = CHARACTER | TERRAIN | SPELL | EFFECT | PROP | VEHICLE
-ZLayer = TERRAIN(0) | VEHICLES(100) | PROPS(200) | EFFECTS(300) | CHARACTERS(400) | PROJECTILES(500) | UI(1000)
-ToolMode = PLACE | SELECT | DELETE | MOVE
-Object System
+**Key Methods:**
+```typescript
+// Object Management
+placeObjectFromTemplate(template: GridObjectTemplate, position: GridPosition): boolean
+addExistingObject(instance: GridObjectInstance, template: GridObjectTemplate): boolean
+removeObject(objectId: string): boolean
+moveObject(objectId: string, newPosition: GridPosition): boolean
 
-GridObjectTemplate - Blueprint for creating objects
-GridObjectInstance - Actual placed object with position/z-index
-AppState - Complete application state
-DragState - Drag operation tracking
+// Template Management
+addTemplate(template: GridObjectTemplate): void
 
-Helper Functions
+// Tool Management
+setTool(tool: ToolMode): void
+```
 
-getDefaultZIndex(type) - Returns appropriate z-layer for object type
+**Object Tracking:**
+- `Map<string, GridObject>` - Active objects with visual representation
+- `Map<string, GridObjectTemplate>` - Available object templates
+- `Set<string>` - Currently selected object IDs
 
+### GridObject (Individual Object Management)
 
-Grid System Classes
-GridRenderer (grid/GridRenderer.ts)
-Purpose: Handles all grid rendering, coordinate conversion, and visual management
-Key Methods:
+**Responsibilities:**
+- Self-contained object state and behavior
+- Konva visual representation management
+- Drag-and-drop interaction handling
+- Visual feedback (selection, drag states)
 
-pixelToGrid(pixel) → GridPosition - Convert canvas pixels to grid coordinates
-gridToPixel(grid) → PixelPosition - Convert grid to canvas pixels
-snapToGrid(pixel) → PixelPosition - Snap coordinates to grid
-isValidGridPosition(pos) → boolean - Check bounds
-isValidGridArea(pos, w, h) → boolean - Check if area fits
-drawGrid() / hideGrid() - Grid visibility
-getOccupiedPositions(pos, size) - Get all tiles an object covers
-getGridDistance(pos1, pos2) - Distance between positions
-getPositionsInRadius(center, radius) - Area queries
+**Lifecycle:**
+```typescript
+constructor(template, position, gridMaster) // Create visual representation
+setupEventHandlers()                        // Attach drag/interaction handlers
+destroy()                                   // Clean up Konva objects
+```
 
-State: Grid layers (background, grid lines), canvas dimensions, grid configuration
-GridState (grid/GridState.ts)
-Purpose: Manages tile occupation, collision detection, z-index conflicts
-Key Methods:
+**Key Features:**
+- **Self-rendering**: Creates own Konva.Group with fallback visuals
+- **Interactive behavior**: Handles own drag events with grid snapping
+- **State synchronization**: Updates GridMaster and GridState during moves
+- **Visual feedback**: Selection highlights and drag validation colors
 
-placeObject(id, pos, size, zIndex, type) → boolean - Place with collision check
-removeObject(id) → boolean - Remove from grid
-moveObject(id, newPos) → boolean - Move with collision check
-canPlaceObject(pos, size, zIndex, excludeId?) → boolean - Check placement validity
-getObjectAtPosition(pos) - Get top object at position
-getAllObjectsAtPosition(pos) - Get all objects at position
-getObjectsInArea(topLeft, bottomRight) - Area queries
-clearAll() - Reset grid state
+### GridState (Spatial Data Management)
 
-Collision Rules:
+**Responsibilities:**
+- Tile occupation tracking
+- Collision detection
+- Spatial queries and validation
+- Z-layer conflict resolution
 
-Characters block other characters
-Vehicles block other vehicles
-Props block vehicles and other props
-Terrain blocks everything except effects/projectiles
-Effects and projectiles don't block anything
+**Data Structures:**
+```typescript
+Map<string, OccupationInfo[]>  // Position-based object lookup
+Map<string, GridPosition>      // Object position tracking  
+Map<string, ObjectSize>        // Object size tracking
+```
 
-Internal Storage:
+**Collision Rules:**
+- Characters block other characters
+- Vehicles block other vehicles  
+- Props block vehicles and other props
+- Terrain blocks everything except effects/projectiles
+- Effects and projectiles don't block anything
 
-Map<string, OccupationInfo[]> - Tile occupation by position key
-Map<string, GridPosition> - Object positions
-Map<string, ObjectSize> - Object sizes
+### GridRenderer (Visual Grid Management)
 
+**Responsibilities:**
+- Grid line rendering and visibility
+- Coordinate system conversion
+- Canvas size management
+- Background rendering
 
-Main Orchestrator
-GridMaster (GridMaster.ts)
-Purpose: Main application class that coordinates all subsystems
-Dependencies:
+**Coordinate System:**
+```typescript
+pixelToGrid(pixel: PixelPosition): GridPosition     // Canvas → Grid
+gridToPixel(grid: GridPosition): PixelPosition      // Grid → Canvas  
+gridToPixelCenter(grid: GridPosition): PixelPosition // Grid → Centered
+snapToGrid(pixel: PixelPosition): PixelPosition     // Snap to nearest
+```
 
-Uses GridRenderer for all rendering operations
-Uses GridState for collision detection and object tracking
-Manages Konva stage and layers
+### PlaceTool (Placement Logic)
 
-Key Methods:
+**Responsibilities:**
+- Template management and validation
+- Placement rule enforcement
+- Weight-based stacking validation
+- Object property management
 
-setTool(tool) - Change current tool
-toggleGrid() - Show/hide grid
-clearAll() - Remove all objects
-pixelToGrid(pixel) / gridToPixel(grid) - Coordinate conversion (delegates to GridRenderer)
-getGridStats() - Statistics from GridState
-getAppState() / getGridConfig() - State access (immutable copies)
+**Integration with GridMaster:**
+```typescript
+// PlaceTool Flow:
+1. validatePlacement(position, template) → PlacementValidation
+2. attemptPlacement(position) → places in GridState
+3. onObjectPlaced(instance) → callback to main.ts
+4. main.ts → gridMaster.addExistingObject() → creates GridObject
+```
 
-Object Management (temporary, will be replaced with ObjectManager):
+### EventManager (Input Coordination)
 
-Maintains Map<string, GridObjectInstance> for object data
-Maintains Map<string, GridObjectTemplate> for object templates
-Maintains Map<string, Konva.Group> for visual representations
-Handles drag-and-drop with collision feedback
+**Responsibilities:**
+- Canvas event handling (click, drag, keyboard)
+- Tool-specific behavior routing
+- Cursor management
+- Object selection coordination
 
-Event Handling: Basic click detection, delegates to EventManager for advanced interactions
+**Tool Modes:**
+- **PLACE**: Coordinate with PlaceTool for object placement
+- **SELECT**: Object selection and highlighting
+- **DELETE**: Object removal coordination
+- **MOVE**: Enable/disable object draggability
 
-UI System Classes
-EventManager (ui/EventManager.ts)
-Purpose: Handles all canvas events and user interactions
-Constructor Requirements:
-typescriptnew EventManager(stage, gridRenderer, gridState, appState, callbacks)
-Key Features:
+### Sidebar (UI Controls)
 
-Click Detection: Distinguishes object clicks vs empty space
-Tool-Aware Behavior: Different actions based on current tool
-Cursor Management: Changes cursor based on context and tool
-Drag System: Complete drag-and-drop with visual feedback
-Context Info: Right-click shows object details
+**Responsibilities:**
+- Tool selection interface
+- File upload handling
+- AI generation interface (mock)
+- Character library management
+- Grid control buttons
 
-Callback Interface:
-typescriptEventManagerCallbacks {
-  onToolAction(tool, position, target?)
-  onObjectSelected(objectId)
-  onObjectDeselected()
-  onObjectMoved(objectId, oldPos, newPos) → boolean
-  onDragStart/onDragEnd(objectId, position, success?)
+**Event Flow:**
+```typescript
+User Interaction → Sidebar → Callback → main.ts → GridMaster → Visual Update
+```
+
+## Data Flow Architecture
+
+### Object Placement Flow
+```
+1. User clicks canvas in PLACE mode
+2. EventManager → handleToolAction(PLACE, position)
+3. main.ts → handleToolAction() → gridMaster.placeObjectFromTemplate()
+4. GridMaster → new GridObject() + gridState.placeObject()
+5. GridObject → creates Konva visual + event handlers
+6. Canvas updates with new object
+```
+
+### Object Movement Flow
+```
+1. User drags object (MOVE mode enabled)
+2. GridObject.dragstart → store original position
+3. GridObject.dragmove → live grid snapping + collision feedback
+4. GridObject.dragend → gridMaster.moveObject()
+5. GridMaster → gridState.moveObject() + visual position update
+6. GridObject → snap to final grid position
+```
+
+### Object Deletion Flow
+```
+1. User clicks object in DELETE mode
+2. EventManager → findObjectIdFromTarget() → handleToolAction(DELETE, id)
+3. main.ts → gridMaster.removeObject()
+4. GridMaster → gridState.removeObject() + gridObject.destroy()
+5. Visual object removed from canvas
+```
+
+## Layer Architecture (Konva)
+
+**Rendering Order (bottom to top):**
+```typescript
+1. backgroundLayer    // Grid background (GridRenderer)
+2. gridLayer         // Grid lines (GridRenderer) 
+3. objectLayer       // Game objects (GridMaster)
+4. uiLayer          // Selection indicators (GridMaster)
+```
+
+**Z-Index Management:**
+```typescript
+ZLayer.TERRAIN = 0      // Floor, pits
+ZLayer.VEHICLES = 100   // Carts, mounts
+ZLayer.PROPS = 200      // Furniture, rocks
+ZLayer.EFFECTS = 300    // Spell areas
+ZLayer.CHARACTERS = 400 // Players, NPCs
+ZLayer.PROJECTILES = 500// Flying spells
+ZLayer.UI = 1000       // Selection, health bars
+```
+
+## State Management
+
+### Application State
+```typescript
+interface AppState {
+  gridConfig: GridConfig           // Grid appearance settings
+  currentTool: ToolMode           // Active user tool
+  dragState: DragState            // Drag operation tracking
+  selectionState: SelectionState  // Selected objects
+  showGrid: boolean               // Grid visibility
+  snapToGrid: boolean             // Snap behavior
 }
-Public Methods:
+```
 
-setTool(tool) - Update tool and object interactivity
-setupObjectDragHandlers(konvaObject, objectId) - Enable dragging for objects
-getCurrentGridPosition() - Mouse position as grid coordinates
-isValidPlacement(pos, w, h) - Placement validation
-
-Sidebar (ui/Sidebar.ts)
-Purpose: Manages all sidebar UI controls and interactions
-Constructor Requirements:
-typescriptnew Sidebar(callbacks: SidebarCallbacks)
-Key Features:
-
-Tool Management: Visual feedback for active tools
-Size Selection: Multi-size object support with visual selection
-File Upload: Drag & drop with validation (PNG, JPG, etc., max 10MB)
-AI Generation: Mock AI with realistic delays and feedback
-Grid Controls: Zoom, reset, clear with confirmation
-Status System: User feedback with auto-hide timers
-Keyboard Shortcuts: P/S/D/M for tools, Ctrl+G for grid, etc.
-
-Callback Interface:
-typescriptSidebarCallbacks {
-  onToolChanged(tool)
-  onSizeChanged(size)
-  onFileUpload(files)
-  onAIGenerate(prompt, size, type)
-  onGridToggle()
-  onZoomIn/Out()
-  onResetView()
-  onClearAll()
+### Object Instance State
+```typescript
+interface GridObjectInstance {
+  id: string                    // Unique identifier
+  templateId: string           // Template reference
+  position: GridPosition       // Current grid location
+  zIndex: number              // Rendering layer
+  rotation?: number           // Object rotation
+  opacity?: number           // Object transparency
+  customData?: Record<string, any> // Extended properties
+  createdAt: Date            // Creation timestamp
 }
-Public Methods:
+```
 
-setToolFromExternal(tool) - External tool changes
-updateCharacterLibrary(characters[]) - Dynamic library updates
-showStatus(message, type) - User feedback
-enableGenerateButton() / disableGenerateButton() - AI generation state
-setupKeyboardShortcuts() - Global keyboard handling
+## Integration Points
 
+### PlaceTool Integration
+- **Template Management**: PlaceTool manages available templates
+- **Placement Logic**: PlaceTool handles validation and rules
+- **Visual Creation**: GridMaster creates GridObject for placed instances
+- **Coordination**: Callback system bridges logical and visual placement
 
-Application Entry Point
-EnhancedGridMasterApp (main.ts)
-Purpose: Application initialization and coordination between all systems
-Initialization Flow:
+### File Upload Integration
+```typescript
+1. Sidebar handles file upload UI
+2. main.ts processes files → creates templates
+3. Templates added to both PlaceTool and GridMaster
+4. Character library updated with new options
+```
 
-Creates GridMaster with configuration
-Creates EventManager with callbacks
-Creates Sidebar with callbacks
-Sets up global keyboard shortcuts
-Handles responsive behavior
+### AI Generation Integration (Mock)
+```typescript
+1. Sidebar captures user prompt
+2. main.ts simulates AI delay
+3. Generated template added to system
+4. Available for placement like uploaded characters
+```
 
-Key Integration Points:
+## Testing Architecture
 
-Tool Changes: Updates both GridMaster and EventManager
-File Processing: Validates, loads, and adds to character library
-AI Generation: Simulates AI with realistic delays and name generation
-Status Management: Centralized user feedback system
+### Component Testing
+- **GridRenderer**: Coordinate conversion, bounds validation
+- **GridState**: Collision detection, spatial queries
+- **GridObject**: Visual creation, event handling
+- **PlaceTool**: Placement validation, template management
 
-Debug Features:
+### Integration Testing
+- **Object Lifecycle**: Create → Move → Delete
+- **Tool Coordination**: Mode switching, behavior changes
+- **File Processing**: Upload → Template Creation → Placement
 
-Global window.gridApp access
-Ctrl+I for grid statistics
-Ctrl+/ for keyboard shortcuts help
+### Mock System
+- **Konva Mocking**: Complete canvas API mocking for headless testing
+- **File API Mocking**: FileReader and upload simulation
+- **Event Simulation**: Mouse and keyboard event testing
 
+## Performance Considerations
 
-Test System
-Test Structure
+### Efficient Rendering
+- **Layer Separation**: Objects only redraw when modified
+- **Z-Index Management**: Minimal layer reorganization
+- **Event Optimization**: Direct object event handlers vs. stage delegation
 
-Unit Tests: Individual class functionality
-Integration Tests: Class interactions
-Mocking: Complete Konva mocking to avoid canvas dependencies
+### Memory Management
+- **Object Cleanup**: Explicit destroy() methods prevent memory leaks
+- **Template Reuse**: Single template → multiple instances
+- **Map-based Tracking**: O(1) object lookup performance
 
-Key Test Files:
+### Scalability
+- **Grid Partitioning**: Ready for spatial indexing if needed
+- **Batch Operations**: Object groups for large operations
+- **Lazy Loading**: Template and asset loading on demand
 
-types.test.ts - Type validation and helper functions
-GridMaster.test.ts - Main class functionality
-grid-system.test.ts - GridRenderer + GridState (32 tests)
-ui-components.test.ts - EventManager + Sidebar functionality
+## Extension Points
 
-Mock System (test/setup.ts):
-typescript// Mocks Konva completely
-vi.mock('konva', () => ({
-  Stage: vi.fn(() => mockStage),
-  Layer: vi.fn(() => mockLayer),
-  Rect: vi.fn(() => mockRect),
-  Line: vi.fn(() => mockLine)
-}))
+### New Object Types
+1. Add to `ObjectType` enum and `ZLayer` mapping
+2. Define collision rules in `GridState.hasZLayerConflict()`
+3. Add visual styling in `GridObject.createFallbackVisual()`
+4. Create template in PlaceTool system
 
-Key Design Patterns
-Separation of Concerns
+### New Tools
+1. Add to `ToolMode` enum
+2. Implement behavior in `EventManager.handleToolAction()`
+3. Add UI controls in `Sidebar`
+4. Update object interaction logic in `GridObject`
 
-GridRenderer: Pure rendering and coordinate math
-GridState: Pure state management and collision logic
-EventManager: Pure event handling and user interaction
-Sidebar: Pure UI control management
-GridMaster: Orchestration and object lifecycle
+### Advanced Features
+- **Multi-selection**: Extend `SelectionState` and selection logic
+- **Copy/Paste**: Template serialization and batch placement
+- **Undo/Redo**: Command pattern implementation
+- **Real AI Integration**: Replace mock generation with actual API calls
+- **Multiplayer**: Event synchronization and conflict resolution
 
-Callback Pattern
-All UI classes use callback interfaces for loose coupling
-Immutable State
+## Error Handling
 
-getAppState() and getGridConfig() return copies
-Prevents external mutation of internal state
+### Validation Layers
+1. **UI Validation**: Sidebar input validation
+2. **Logic Validation**: PlaceTool placement rules
+3. **State Validation**: GridState collision detection
+4. **Visual Validation**: GridObject bounds checking
 
-Z-Index Management
+### Recovery Mechanisms
+- **Failed Placement**: Visual feedback, revert to previous state
+- **Invalid Moves**: Automatic snap-back to valid position
+- **Template Errors**: Fallback visuals for missing assets
+- **Event Errors**: Graceful degradation, user notification
 
-Layered collision detection based on object types
-Visual z-ordering matches logical z-layers
-
-Error Handling
-
-Graceful degradation in test environments
-Validation at multiple levels (UI, logic, rendering)
-
-
-Future Extension Points
-Ready for Phase 5:
-
-ObjectManager: Replace temporary object management in GridMaster
-ObjectRenderer: Dedicated object rendering with image support
-Advanced Features: Copy/paste, object grouping, property editing
-
-Architecture Benefits:
-
-Modular: Each class has single responsibility
-Testable: Comprehensive test coverage with mocking
-Extensible: Clear interfaces for adding features
-Maintainable: Clean separation allows independent changes
-
-This architecture provides a solid foundation for building a professional grid-based application with room for significant expansion while maintaining code quality and testability.
+This architecture provides a robust, scalable foundation for grid-based object management while maintaining clear separation of concerns and consistent user experience across all object types and interactions.
