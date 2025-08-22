@@ -43,7 +43,8 @@ export class Sidebar {
     
     toolButtons.forEach(button => {
       button.addEventListener('click', (e) => {
-        const tool = (e.target as HTMLElement).getAttribute('data-tool') as ToolMode;
+        e.preventDefault();
+        const tool = (e.currentTarget as HTMLElement).getAttribute('data-tool') as ToolMode;
         if (tool && this.isValidTool(tool)) {
           this.setTool(tool);
         }
@@ -52,6 +53,7 @@ export class Sidebar {
 
     // Set initial active tool
     this.updateToolButtons();
+    console.log('✅ Tool buttons setup completed');
   }
 
   private isValidTool(tool: string): tool is ToolMode {
@@ -59,10 +61,10 @@ export class Sidebar {
   }
 
   private setTool(tool: ToolMode): void {
+    console.log(`🔧 Sidebar: Setting tool to ${tool}`);
     this.currentTool = tool;
     this.updateToolButtons();
     this.callbacks.onToolChanged(tool);
-    console.log(`🔧 Tool changed to: ${tool}`);
   }
 
   private updateToolButtons(): void {
@@ -71,11 +73,13 @@ export class Sidebar {
     toolButtons.forEach(button => {
       const tool = button.getAttribute('data-tool');
       if (tool === this.currentTool) {
-        button.classList.add('active');
+        button.classList.add('is-active');
       } else {
-        button.classList.remove('active');
+        button.classList.remove('is-active');
       }
     });
+    
+    console.log(`✅ Tool buttons updated, active: ${this.currentTool}`);
   }
 
   private setupSizeSelector(): void {

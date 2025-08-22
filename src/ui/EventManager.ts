@@ -1,16 +1,18 @@
 // src/ui/EventManager.ts
-// Handles all canvas events and user interactions
+// Enhanced with PlaceTool integration
 
 import Konva from 'konva';
 import { GridRenderer } from '../grid/GridRenderer';
 import { GridState } from '../grid/GridState';
+import { PlaceTool } from '../tools/PlaceTool';
 import { 
   GridPosition, 
   ToolMode, 
   AppState, 
   DragState,
   GridEvent,
-  ZLayer 
+  ZLayer,
+  GridObjectInstance
 } from '../types';
 
 export interface EventManagerCallbacks {
@@ -20,6 +22,10 @@ export interface EventManagerCallbacks {
   onObjectMoved: (objectId: string, oldPosition: GridPosition, newPosition: GridPosition) => boolean;
   onDragStart: (objectId: string, position: GridPosition) => void;
   onDragEnd: (objectId: string, position: GridPosition, success: boolean) => void;
+  // New PlaceTool callbacks
+  onObjectPlaced: (instance: GridObjectInstance) => void;
+  onPlacementFailed: (reason: string, position: GridPosition) => void;
+  onTemplateSelected: (templateId: string) => void;
 }
 
 export class EventManager {
@@ -28,6 +34,7 @@ export class EventManager {
   private gridState: GridState;
   private appState: AppState;
   private callbacks: EventManagerCallbacks;
+  private placeTool: PlaceTool;
   
   private isDragging = false;
   private dragTarget: Konva.Node | null = null;
@@ -47,8 +54,19 @@ export class EventManager {
     this.appState = appState;
     this.callbacks = callbacks;
 
+    // Initialize PlaceTool
+    this.placeTool = new PlaceTool(
+      gridState,
+      gridRenderer,
+      {
+        onObjectPlaced: (instance) => this.callbacks.onObjectPlaced(instance),
+        onPlacementFailed: (reason, position) => this.callbacks.onPlacementFailed(reason, position),
+        onTemplateSelected: (template) => this.callbacks.onTemplateSelected(template.id)
+      }
+    );
+
     this.setupEventHandlers();
-    console.log('✅ EventManager initialized');
+    console.log('✅ EventManager initialized with PlaceTool');
   }
 
   private setupEventHandlers(): void {
@@ -88,7 +106,8 @@ export class EventManager {
     
     switch (this.appState.currentTool) {
       case ToolMode.PLACE:
-        this.callbacks.onToolAction(ToolMode.PLACE, gridPos);
+        // Use PlaceTool for placement
+        this.placeTool.attemptPlacement(gridPos);
         break;
         
       case ToolMode.SELECT:
@@ -119,7 +138,7 @@ export class EventManager {
     
     switch (this.appState.currentTool) {
       case ToolMode.PLACE:
-        console.log('Place tool: clicked existing object');
+        console.log('Place tool: clicked existing object - no action');
         break;
         
       case ToolMode.SELECT:
@@ -127,6 +146,7 @@ export class EventManager {
         break;
         
       case ToolMode.DELETE:
+        console.log(`Delete tool: attempting to delete ${objectId}`);
         this.callbacks.onToolAction(ToolMode.DELETE, gridPos, objectId);
         break;
         
@@ -164,6 +184,15 @@ export class EventManager {
     
     if (objects.length === 0) {
       console.log('No objects at this position');
+      
+      // Show placement info if in place mode
+      if (this.appState.currentTool === ToolMode.PLACE) {
+        const selectedTemplate = this.placeTool.getSelectedTemplate();
+        if (selectedTemplate) {
+          const validation = this.placeTool.validatePlacement(gridPos);
+          console.log('Placement validation:', validation);
+        }
+      }
     } else {
       console.log(`Objects at position (${objects.length}):`);
       objects.forEach((obj, index) => {
@@ -214,8 +243,8 @@ export class EventManager {
     
     switch (this.appState.currentTool) {
       case ToolMode.PLACE:
-        // Check if placement is valid
-        const canPlace = this.gridState.canPlaceObject(gridPos, { width: 1, height: 1 }, ZLayer.CHARACTERS);
+        // Use PlaceTool to check if placement is valid
+        const canPlace = this.placeTool.isValidPosition(gridPos);
         container.style.cursor = canPlace ? 'crosshair' : 'not-allowed';
         break;
         
@@ -262,7 +291,7 @@ export class EventManager {
     document.title = 'Grid Master';
   }
 
-  // Drag handling methods
+  // Drag handling methods (existing code)
   public setupObjectDragHandlers(konvaObject: Konva.Group, objectId: string): void {
     konvaObject.attrs.objectId = objectId; // Store object ID for identification
     
@@ -409,6 +438,19 @@ export class EventManager {
     });
   }
 
+  // PlaceTool management methods
+  public getPlaceTool(): PlaceTool {
+    return this.placeTool;
+  }
+
+  public selectTemplate(templateId: string): boolean {
+    return this.placeTool.selectTemplate(templateId);
+  }
+
+  public getSelectedTemplate() {
+    return this.placeTool.getSelectedTemplate();
+  }
+
   // Public methods
   public getCurrentGridPosition(): GridPosition | null {
     const pos = this.stage.getPointerPosition();
@@ -427,6 +469,9 @@ export class EventManager {
     this.stage.off('mousemove');
     this.stage.off('mouseenter');
     this.stage.off('mouseleave');
+    
+    // Destroy PlaceTool
+    this.placeTool?.destroy();
     
     console.log('✅ EventManager destroyed');
   }

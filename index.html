@@ -240,6 +240,22 @@
       letter-spacing: 1px;
       font-weight: 600;
     }
+    
+    /* Ensure tool buttons have proper active states */
+    [data-tool].is-active {
+      background: linear-gradient(45deg, var(--accent-color), var(--accent-hover)) !important;
+      border-color: var(--accent-color) !important;
+      color: white !important;
+    }
+
+    [data-tool]:hover {
+      background: #555 !important;
+      border-color: #555 !important;
+    }
+
+    [data-tool].is-active:hover {
+      background: linear-gradient(45deg, var(--accent-hover), var(--accent-color)) !important;
+    }
   </style>
 </head>
 <body>
@@ -335,7 +351,7 @@
           <h3 class="subtitle is-6 section-header mb-3">Tools</h3>
           <div class="field is-grouped is-grouped-multiline">
             <div class="control">
-              <button class="button is-dark-custom is-active" data-tool="place">
+              <button class="button is-dark-custom is-active" data-tool="place" type="button">
                 <span class="icon">
                   <i class="fas fa-plus"></i>
                 </span>
@@ -343,7 +359,7 @@
               </button>
             </div>
             <div class="control">
-              <button class="button is-dark-custom" data-tool="select">
+              <button class="button is-dark-custom" data-tool="select" type="button">
                 <span class="icon">
                   <i class="fas fa-mouse-pointer"></i>
                 </span>
@@ -351,7 +367,7 @@
               </button>
             </div>
             <div class="control">
-              <button class="button is-dark-custom" data-tool="delete">
+              <button class="button is-dark-custom" data-tool="delete" type="button">
                 <span class="icon">
                   <i class="fas fa-trash"></i>
                 </span>
@@ -359,7 +375,7 @@
               </button>
             </div>
             <div class="control">
-              <button class="button is-dark-custom" data-tool="move">
+              <button class="button is-dark-custom" data-tool="move" type="button">
                 <span class="icon">
                   <i class="fas fa-arrows-alt"></i>
                 </span>
